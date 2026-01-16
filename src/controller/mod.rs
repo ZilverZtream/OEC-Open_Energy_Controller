@@ -10,6 +10,12 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::power_flow::{
+    AllConstraints,
+    PowerFlowInputs,
+    constraints::{PhysicalConstraints, SafetyConstraints, EconomicObjectives},
+    model::PowerFlowModel,
+};
 
 use crate::domain::{
     Battery, BatteryCapabilities, BatteryState, Forecast24h, GridConnection, GridLimits,
@@ -75,18 +81,62 @@ impl AppState {
         });
         let schedule = Arc::new(RwLock::new(None::<Schedule>));
 
+        // Initialize constraints with actual battery capabilities
+        let constraints = Constraints {
+            min_soc_percent: cfg.battery.min_soc_percent,
+            max_soc_percent: cfg.battery.max_soc_percent,
+            max_cycles_per_day: 1.0,
+            max_power_grid_kw: 11.0, // TODO: Get from config
+            v2g_enabled: false,
+            battery_capacity_kwh: caps.capacity_kwh,
+            battery_max_charge_kw: caps.max_charge_kw,
+            battery_max_discharge_kw: caps.max_discharge_kw,
+            battery_efficiency: caps.efficiency,
+        };
+
+        // Initialize power flow constraints for real-time safety checks
+        let power_flow_constraints = Arc::new(AllConstraints {
+            physical: PhysicalConstraints {
+                max_grid_import_kw: 11.0, // TODO: Get from config
+                max_grid_export_kw: 11.0,
+                max_battery_charge_kw: caps.max_charge_kw,
+                max_battery_discharge_kw: caps.max_discharge_kw,
+                evse_min_current_a: 6.0,
+                evse_max_current_a: 32.0,
+                phases: 1, // TODO: Get from config
+                max_current_per_phase_a: Some(32.0),
+                grid_voltage_v: 230.0,
+            },
+            safety: SafetyConstraints {
+                battery_min_soc_percent: cfg.battery.min_soc_percent,
+                battery_max_soc_percent: cfg.battery.max_soc_percent,
+                house_priority: true,
+                max_battery_cycles_per_day: 1.5,
+                max_battery_temp_c: 45.0,
+            },
+            economic: EconomicObjectives {
+                grid_price_sek_kwh: 1.5, // Will be updated from schedule
+                export_price_sek_kwh: 0.8,
+                prefer_self_consumption: true,
+                arbitrage_threshold_sek_kwh: 2.0,
+                ev_departure_time: None,
+                ev_target_soc_percent: None,
+            },
+        });
+
         let history_capacity = ((24 * 60 * 60) / cfg.controller.tick_seconds.max(1)) as usize;
         let controller = Arc::new(BatteryController {
             battery,
             optimizer,
             forecast_engine,
             schedule,
-            constraints: Arc::new(RwLock::new(Constraints::default())),
+            constraints: Arc::new(RwLock::new(constraints)),
             household_id: Uuid::new_v4(),
             state_history: Arc::new(RwLock::new(VecDeque::with_capacity(
                 history_capacity.max(1),
             ))),
             history_capacity: history_capacity.max(1),
+            power_flow_constraints,
         });
 
         Ok(Self {
@@ -125,6 +175,8 @@ pub struct BatteryController {
     pub household_id: Uuid,
     state_history: Arc<RwLock<VecDeque<BatteryStateSample>>>,
     history_capacity: usize,
+    // Power flow model for real-time safety and optimization
+    power_flow_constraints: Arc<AllConstraints>,
 }
 
 impl BatteryController {
@@ -136,7 +188,9 @@ impl BatteryController {
             let state = self.battery.read_state().await?;
             let now_utc = Utc::now();
             self.record_state(now_utc, state.clone()).await;
-            let target_power = self
+
+            // Get scheduled target power as a hint
+            let schedule_target_w = self
                 .schedule
                 .read()
                 .await
@@ -144,17 +198,76 @@ impl BatteryController {
                 .and_then(|s| s.power_at(now_utc))
                 .unwrap_or(0.0);
 
-            // Get battery capabilities for output clamping
+            // Build PowerFlowInputs from current state
+            // TODO: Replace with real sensor data for PV and house load
+            let inputs = PowerFlowInputs::new(
+                0.0,  // pv_production_kw - TODO: Add PV sensor
+                2.0,  // house_load_kw - TODO: Add house load meter
+                state.soc_percent,
+                state.temperature_c,
+                1.5,  // grid_price_sek_kwh - TODO: Get from schedule/forecast
+            );
+
+            // CRITICAL: Validate inputs before passing to PowerFlowModel
+            if let Err(e) = inputs.validate() {
+                warn!(error=%e, "Invalid PowerFlowInputs, using fallback");
+                let caps = self.battery.capabilities();
+                let fallback_w = schedule_target_w.clamp(
+                    -caps.max_discharge_kw * 1000.0,
+                    caps.max_charge_kw * 1000.0
+                );
+                self.battery.set_power(fallback_w).await?;
+                continue;
+            }
+
+            // Create PowerFlowModel and compute optimal flows
+            let model = PowerFlowModel::new((*self.power_flow_constraints).clone());
+
+            // Compute power flows with safety checks
+            let target_power_w = match model.compute_flows(&inputs) {
+                Ok(snapshot) => {
+                    // Use the battery power from PowerFlowModel
+                    // Convert kW to W
+                    let battery_target_w = snapshot.battery_kw * 1000.0;
+
+                    // Log the power flow decision
+                    info!(
+                        soc_percent = state.soc_percent,
+                        current_power_w = state.power_w,
+                        schedule_target_w = schedule_target_w,
+                        powerflow_target_w = battery_target_w,
+                        pv_kw = snapshot.pv_kw,
+                        house_kw = snapshot.house_kw,
+                        grid_kw = snapshot.grid_kw,
+                        "PowerFlowModel decision"
+                    );
+
+                    battery_target_w
+                }
+                Err(e) => {
+                    // If PowerFlowModel fails, fall back to schedule with safety clamps
+                    warn!(error=%e, "PowerFlowModel failed, using schedule fallback");
+
+                    // Apply basic safety checks
+                    let caps = self.battery.capabilities();
+                    let max_charge_w = caps.max_charge_kw * 1000.0;
+                    let max_discharge_w = caps.max_discharge_kw * 1000.0;
+
+                    schedule_target_w.clamp(-max_discharge_w, max_charge_w)
+                }
+            };
+
+            // Use simple P control to smooth the transition
             let caps = self.battery.capabilities();
             let max_charge_w = caps.max_charge_kw * 1000.0;
             let max_discharge_w = caps.max_discharge_kw * 1000.0;
+            let control = simple_p_control(state.power_w, target_power_w, max_charge_w, max_discharge_w);
 
-            let control = simple_p_control(state.power_w, target_power, max_charge_w, max_discharge_w);
             self.battery.set_power(control).await?;
             info!(
                 soc_percent = state.soc_percent,
                 power_w = state.power_w,
-                target_power_w = target_power,
+                target_power_w = target_power_w,
                 control_w = control,
                 "control tick"
             );
@@ -350,7 +463,9 @@ impl BatteryController {
     }
     async fn record_state(&self, timestamp: DateTime<Utc>, state: BatteryState) {
         let mut history = self.state_history.write().await;
-        if history.len() >= self.history_capacity {
+        // Use while loop to handle case where capacity might have changed
+        // The write lock protects against concurrent modifications
+        while history.len() >= self.history_capacity {
             history.pop_front();
         }
         history.push_back(BatteryStateSample { timestamp, state });
@@ -479,6 +594,7 @@ mod tests {
             household_id: Uuid::new_v4(),
             state_history: Arc::new(RwLock::new(VecDeque::new())),
             history_capacity: 10,
+            power_flow_constraints: Arc::new(AllConstraints::default()),
         }
     }
 
