@@ -20,6 +20,9 @@ pub mod models;
 pub mod training;
 pub mod inference;
 
+#[cfg(feature = "ml")]
+pub mod smartcore;
+
 /// ML Model Type
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ModelType {

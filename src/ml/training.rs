@@ -7,6 +7,11 @@ use super::{FeatureVector, ModelMetadata, ModelType, ValidationMetrics};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "ml")]
+use chrono::{DateTime, Duration, Utc};
+#[cfg(feature = "ml")]
+use uuid::Uuid;
+
 /// Training Dataset
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingDataset {
@@ -228,6 +233,220 @@ impl ModelTrainer {
             intercept,
             metadata,
         ))
+    }
+}
+
+/// Consumption Model Training Service
+///
+/// This module provides the "Nightly Edge Training" pipeline for consumption forecasting.
+#[cfg(all(feature = "ml", feature = "db"))]
+pub mod consumption_trainer {
+    use super::*;
+    use crate::forecast::features::{normalize_features_cyclical, FeatureExtractor};
+    use crate::ml::smartcore::SmartcoreRandomForest;
+    use crate::repo::consumption::ConsumptionRepository;
+    use crate::domain::ConsumptionPoint;
+    use tracing::{error, info, warn};
+
+    /// Configuration for consumption model training
+    #[derive(Debug, Clone)]
+    pub struct ConsumptionTrainingConfig {
+        /// Number of days of historical data to use
+        pub history_days: i64,
+        /// Maximum number of samples to use (for memory efficiency)
+        pub max_samples: usize,
+        /// Validation split ratio
+        pub validation_split: f64,
+        /// Random forest parameters
+        pub n_trees: usize,
+        pub max_depth: Option<usize>,
+        pub min_samples_split: usize,
+    }
+
+    impl Default for ConsumptionTrainingConfig {
+        fn default() -> Self {
+            Self {
+                history_days: 30,        // Use last 30 days
+                max_samples: 50_000,     // Limit to prevent OOM
+                validation_split: 0.1,   // 10% validation
+                n_trees: 50,             // Conservative for Pi
+                max_depth: Some(10),     // Prevent depth explosion
+                min_samples_split: 5,    // Reduce overfitting
+            }
+        }
+    }
+
+    /// Train a consumption forecasting model
+    ///
+    /// This function implements the core "Nightly Edge Training" logic:
+    /// 1. Fetch historical data from the database
+    /// 2. Extract features using cyclical time encoding
+    /// 3. Train a RandomForest model
+    /// 4. Validate and return the trained model
+    pub async fn train_consumption_model(
+        repo: &ConsumptionRepository,
+        household_id: Uuid,
+        latitude: f64,
+        longitude: f64,
+        config: ConsumptionTrainingConfig,
+    ) -> Result<SmartcoreRandomForest> {
+        info!("Starting consumption model training for household {}", household_id);
+
+        // Calculate time range
+        let end = Utc::now();
+        let start = end - Duration::days(config.history_days);
+
+        info!(
+            "Fetching consumption data from {} to {}",
+            start.format("%Y-%m-%d"),
+            end.format("%Y-%m-%d")
+        );
+
+        // Fetch historical data
+        let data: Vec<ConsumptionPoint> = repo
+            .find_range(
+                household_id,
+                start.into(),
+                end.into(),
+            )
+            .await?;
+
+        if data.is_empty() {
+            anyhow::bail!("No historical data available for training");
+        }
+
+        info!("Retrieved {} consumption data points", data.len());
+
+        // Downsample if necessary to prevent OOM
+        let data: Vec<ConsumptionPoint> = if data.len() > config.max_samples {
+            warn!(
+                "Downsampling from {} to {} samples to prevent OOM",
+                data.len(),
+                config.max_samples
+            );
+            let step = data.len() / config.max_samples;
+            data.into_iter()
+                .enumerate()
+                .filter(|(i, _)| i % step == 0)
+                .map(|(_, d)| d)
+                .take(config.max_samples)
+                .collect()
+        } else {
+            data
+        };
+
+        // Extract features
+        info!("Extracting features from {} samples", data.len());
+        let feature_extractor = FeatureExtractor::new(latitude, longitude);
+
+        let mut features_list = Vec::new();
+        let mut targets = Vec::new();
+
+        for point in data {
+            let timestamp = point.time_start;
+            let temporal_features = feature_extractor.extract_temporal_features(timestamp.into());
+            let normalized_features = normalize_features_cyclical(&temporal_features);
+
+            features_list.push(normalized_features);
+            targets.push(point.load_kw);
+        }
+
+        if features_list.is_empty() {
+            anyhow::bail!("Failed to extract features from data");
+        }
+
+        info!(
+            "Extracted {} features per sample",
+            features_list[0].len()
+        );
+
+        // Split into training and validation sets
+        let split_idx = ((features_list.len() as f64) * (1.0 - config.validation_split)) as usize;
+        let split_idx = split_idx.max(1).min(features_list.len() - 1);
+
+        let train_x = features_list[..split_idx].to_vec();
+        let train_y = targets[..split_idx].to_vec();
+        let val_x = features_list[split_idx..].to_vec();
+        let val_y = targets[split_idx..].to_vec();
+
+        info!(
+            "Split data: {} training samples, {} validation samples",
+            train_x.len(),
+            val_x.len()
+        );
+
+        // Generate feature names
+        let feature_names = vec![
+            "hour_sin".to_string(),
+            "hour_cos".to_string(),
+            "day_of_week_sin".to_string(),
+            "day_of_week_cos".to_string(),
+            "month_sin".to_string(),
+            "month_cos".to_string(),
+            "day_of_month_norm".to_string(),
+            "is_weekend".to_string(),
+            "is_holiday".to_string(),
+            "temperature_norm".to_string(),
+            "cloud_cover_norm".to_string(),
+            "wind_speed_norm".to_string(),
+            "season_sin".to_string(),
+            "season_cos".to_string(),
+            "day_length_norm".to_string(),
+        ];
+
+        // Train the model
+        info!(
+            "Training RandomForest with {} trees, max_depth={:?}",
+            config.n_trees, config.max_depth
+        );
+
+        let params = SmartcoreRandomForest::custom_parameters(
+            config.n_trees,
+            config.max_depth,
+            config.min_samples_split,
+        );
+
+        let model = SmartcoreRandomForest::train(&train_x, &train_y, params, feature_names)?;
+
+        info!(
+            "Model trained successfully. Training metrics: MAE={:.3}, RMSE={:.3}, R2={:.3}",
+            model.metadata.validation_metrics.mae,
+            model.metadata.validation_metrics.rmse,
+            model.metadata.validation_metrics.r2
+        );
+
+        // Validate on held-out set
+        if !val_x.is_empty() {
+            use crate::ml::models::MLModel;
+
+            let mut val_predictions = Vec::new();
+            for features in &val_x {
+                let fv = FeatureVector::new(
+                    features.clone(),
+                    model.metadata.feature_names.clone(),
+                )?;
+                let pred = model.predict(&fv)?;
+                val_predictions.push(pred.value);
+            }
+
+            let trainer = ModelTrainer::new(TrainingConfig::default());
+            let val_metrics = trainer.calculate_metrics(&val_predictions, &val_y)?;
+
+            info!(
+                "Validation metrics: MAE={:.3}, RMSE={:.3}, R2={:.3}",
+                val_metrics.mae, val_metrics.rmse, val_metrics.r2
+            );
+
+            // Check if model quality is acceptable
+            if val_metrics.r2 < 0.3 {
+                warn!(
+                    "Model R2 score is low ({:.3}), but continuing with training",
+                    val_metrics.r2
+                );
+            }
+        }
+
+        Ok(model)
     }
 }
 
