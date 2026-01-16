@@ -88,10 +88,8 @@ impl EvState {
         let energy_needed = self.energy_needed_kwh();
         let time_until_departure = self.time_until_departure(now).unwrap_or(24.0);
 
-        // CRITICAL SAFETY FIX: Handle division by zero and edge cases
-        // If departure is now or in the past (time <= 0), maximum urgency
-        // If time is very small (< 0.01 hours = 36 seconds), also maximum urgency
-        const MIN_TIME_HOURS: f64 = 0.01; // 36 seconds minimum threshold
+        // Handle edge cases: if departure is imminent (<36 seconds), use maximum urgency
+        const MIN_TIME_HOURS: f64 = 0.01;
         let required_rate_kw = if time_until_departure > MIN_TIME_HOURS {
             energy_needed / time_until_departure
         } else {
@@ -99,8 +97,7 @@ impl EvState {
             self.max_charge_kw
         };
 
-        // Urgency = required_rate / max_rate
-        // SAFETY: Prevent division by zero if max_charge_kw is zero
+        // Calculate urgency = required_rate / max_rate
         if self.max_charge_kw > 0.01 {
             (required_rate_kw / self.max_charge_kw).min(1.0)
         } else {
@@ -145,8 +142,7 @@ impl PowerFlowInputs {
 
     /// Validate inputs for sanity
     pub fn validate(&self) -> Result<(), String> {
-        // CRITICAL SAFETY FIX: Check all values are finite (not NaN or Inf)
-        // NaN/Inf from bad sensors could propagate and cause undefined behavior
+        // Check all values are finite (not NaN or Inf)
         if !self.pv_production_kw.is_finite() {
             return Err(format!("pv_production_kw is not finite: {}", self.pv_production_kw));
         }
@@ -187,7 +183,7 @@ impl PowerFlowInputs {
         }
 
         if let Some(ref ev) = self.ev_state {
-            // CRITICAL SAFETY FIX: Check EV values are finite
+            // Check EV values are finite
             if !ev.soc_percent.is_finite() {
                 return Err(format!("EV soc_percent is not finite: {}", ev.soc_percent));
             }

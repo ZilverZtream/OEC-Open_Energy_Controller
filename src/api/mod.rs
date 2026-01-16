@@ -30,6 +30,7 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
 #[cfg(feature = "swagger")]
 pub fn with_swagger(app: Router) -> Router {
     use crate::api::openapi::ApiDoc;
+    use utoipa::OpenApi;
     use utoipa_swagger_ui::SwaggerUi;
     app.merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
 }

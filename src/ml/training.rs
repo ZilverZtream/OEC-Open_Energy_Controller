@@ -44,7 +44,7 @@ impl TrainingDataset {
             anyhow::bail!("Cannot split empty dataset");
         }
 
-        // PRECISION FIX: Add bounds checking and ensure valid split
+        // Calculate split index with bounds checking
         let split_idx = (self.len() as f64 * train_ratio).floor() as usize;
 
         // Ensure split creates non-empty sets

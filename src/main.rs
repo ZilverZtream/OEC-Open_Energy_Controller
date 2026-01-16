@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
     let cfg = Config::load()?;
     let app_state = controller::AppState::new(cfg.clone()).await?;
 
-    let app: Router = api::router(app_state.clone(), &cfg);
+    let mut app: Router = api::router(app_state.clone(), &cfg);
 
     #[cfg(feature = "swagger")]
     {

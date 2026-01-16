@@ -998,13 +998,13 @@
 - [x] Add unit tests with example data
 
 ### Modbus Mock Server (for testing)
-- [ ] Create `tests/modbus_mock_server.rs`
-- [ ] Implement `MockModbusServer` struct
-- [ ] Implement holding register storage (HashMap)
-- [ ] Implement read/write operations
-- [ ] Implement realistic response delays
-- [ ] Add ability to simulate errors (timeout, exception codes)
-- [ ] Add ability to simulate device disconnection
+- [x] Create `tests/modbus_mock_server.rs`
+- [x] Implement `MockModbusServer` struct
+- [x] Implement holding register storage (HashMap)
+- [x] Implement read/write operations
+- [x] Implement realistic response delays
+- [x] Add ability to simulate errors (timeout, exception codes)
+- [x] Add ability to simulate device disconnection
 - [ ] Use in integration tests
 - [ ] Document usage in test helpers
 
@@ -1134,14 +1134,14 @@
 ## 📋 PHASE 9: FORECASTING ENGINE
 
 ### Price Forecasting - Nordpool Integration
-- [ ] Create `src/forecast/price/mod.rs`
-- [ ] Create `src/forecast/price/nordpool.rs`
-- [ ] Create `NordpoolClient` struct
-- [ ] Implement Nordpool API client (HTTP REST)
-- [ ] Implement `fetch_day_ahead_prices(date, area) -> Result<Vec<PricePoint>>` method
-- [ ] Parse JSON response from Nordpool
-- [ ] Handle EUR to SEK conversion
-- [ ] Add request caching (cache for 1 hour)
+- [x] Create `src/forecast/price/mod.rs`
+- [x] Create `src/forecast/price/nordpool.rs`
+- [x] Create `NordpoolClient` struct
+- [x] Implement Nordpool API client (HTTP REST)
+- [x] Implement `fetch_day_ahead_prices(date, area) -> Result<Vec<PricePoint>>` method
+- [x] Parse JSON response from Nordpool
+- [x] Handle EUR to SEK conversion
+- [x] Add request caching (cache for 1 hour)
 - [ ] Add retry logic with exponential backoff
 - [ ] Add rate limiting (respect API limits)
 - [ ] Add integration tests with wiremock
@@ -1380,24 +1380,24 @@
 - [x] Add unit tests
 
 ### Periodic Tasks Manager
-- [ ] Create `src/controller/scheduler.rs`
-- [ ] Create `TaskScheduler` struct
-- [ ] Implement periodic task: re-optimize every hour
-- [ ] Implement periodic task: refresh forecast every 30 minutes
-- [ ] Implement periodic task: cleanup old data every 24 hours
-- [ ] Implement periodic task: health check every 5 minutes
+- [x] Create `src/controller/scheduler.rs`
+- [x] Create `TaskScheduler` struct
+- [x] Implement periodic task: re-optimize every hour
+- [x] Implement periodic task: refresh forecast every 30 minutes
+- [x] Implement periodic task: cleanup old data every 24 hours
+- [x] Implement periodic task: health check every 5 minutes
 - [ ] Add graceful shutdown for all tasks
-- [ ] Add task monitoring (last run, success/failure)
+- [x] Add task monitoring (last run, success/failure)
 - [ ] Add integration tests
 
 ### Safety Monitors
-- [ ] Create `src/controller/safety.rs`
-- [ ] Create `SafetyMonitor` struct
-- [ ] Implement battery temperature check (shutdown if >60°C)
-- [ ] Implement SoC bounds check (emergency stop if <5% or >98%)
-- [ ] Implement grid fault detection
-- [ ] Implement emergency shutdown procedure
-- [ ] Add safety event logging
+- [x] Create `src/controller/safety.rs`
+- [x] Create `SafetyMonitor` struct
+- [x] Implement battery temperature check (shutdown if >60°C)
+- [x] Implement SoC bounds check (emergency stop if <5% or >98%)
+- [x] Implement grid fault detection
+- [x] Implement emergency shutdown procedure
+- [x] Add safety event logging
 - [ ] Add alerts/notifications
 - [x] Add unit tests for each safety check
 
@@ -1415,8 +1415,8 @@
 
 ### API Structure Setup
 - [x] Create `src/api/mod.rs`
-- [ ] Create `src/api/routes.rs`
-- [ ] Create `src/api/handlers/mod.rs`
+- [x] Create `src/api/routes.rs` (v1.rs implements routing)
+- [x] Create `src/api/handlers/mod.rs` (individual handler files created)
 - [ ] Create `src/api/middleware/mod.rs`
 - [x] Create `src/api/error.rs`
 - [x] Create `src/api/response.rs`

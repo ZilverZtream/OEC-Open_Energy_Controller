@@ -149,8 +149,7 @@ impl AllConstraints {
 
     /// Validate constraints for consistency
     pub fn validate(&self) -> Result<(), String> {
-        // CRITICAL SAFETY FIX: Check all constraint values are finite (not NaN or Inf)
-        // NaN/Inf constraints would bypass all safety systems
+        // Check all constraint values are finite (not NaN or Inf)
 
         // Physical constraints finite checks
         if !self.physical.max_grid_import_kw.is_finite() {

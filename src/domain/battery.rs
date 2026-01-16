@@ -254,8 +254,7 @@ impl Battery for SimulatedBattery {
         let cap_kwh = self.caps.capacity_kwh.max(0.1);
 
         let power_kw = watts / 1000.0;
-        // CRITICAL SAFETY FIX D7: Reject invalid efficiency instead of silently clamping
-        // Invalid efficiency indicates a configuration error that should fail loudly
+        // Validate efficiency is within acceptable range
         let eff = if self.caps.efficiency >= 0.5 && self.caps.efficiency <= 1.0 {
             self.caps.efficiency
         } else {
@@ -274,7 +273,6 @@ impl Battery for SimulatedBattery {
         const AMBIENT_TEMP: f64 = 25.0;
         const TEMP_RISE_PER_KW: f64 = 2.0; // °C per kW of power
         const COOLING_RATE: f64 = 0.5; // °C per time step when idle
-        // CRITICAL SAFETY FIX D6: Respect max_battery_temp_c safety constraint
         const MAX_SAFE_TEMP: f64 = 45.0; // Should match SafetyConstraints default
 
         let power_abs_kw = watts.abs() / 1000.0;
