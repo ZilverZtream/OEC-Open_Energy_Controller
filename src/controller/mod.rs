@@ -78,7 +78,11 @@ impl AppState {
 
         #[cfg(feature = "sim")]
         let battery: Arc<dyn Battery> =
-            Arc::new(crate::domain::SimulatedBattery::new(initial, caps.clone()));
+            Arc::new(crate::domain::SimulatedBattery::new_with_ambient(
+                initial,
+                caps.clone(),
+                cfg.battery.ambient_temp_c,
+            ));
         #[cfg(not(feature = "sim"))]
         let battery: Arc<dyn Battery> = Arc::new(crate::domain::MockBattery::new(
             Default::default(),
@@ -143,6 +147,7 @@ impl AppState {
                 arbitrage_threshold_sek_kwh: 2.0,
                 ev_departure_time: None,
                 ev_target_soc_percent: None,
+                low_price_charge_rate: cfg.optimization.low_price_charge_rate,
             },
         });
 
@@ -387,11 +392,20 @@ impl BatteryController {
         end_time: DateTime<Utc>,
         interval: Option<chrono::Duration>,
     ) -> Vec<BatteryStateSample> {
-        let history = self.state_history.read().await;
+        // CRITICAL FIX: Clone data quickly and drop the lock BEFORE filtering/processing
+        // This prevents blocking the controller's write operations during serialization
+        // The read lock should be held for the minimum time possible
+        let history_snapshot = {
+            let history = self.state_history.read().await;
+            // Clone only the relevant portion to minimize memory and lock time
+            history.iter().cloned().collect::<Vec<_>>()
+        }; // Lock is dropped here
+
+        // Now filter the cloned data without holding any lock
         let mut results = Vec::new();
         let mut last_included: Option<DateTime<Utc>> = None;
 
-        for sample in history.iter() {
+        for sample in history_snapshot.iter() {
             if sample.timestamp < start_time || sample.timestamp > end_time {
                 continue;
             }

@@ -111,14 +111,16 @@ fn simulate_action(
     t: usize,
     constraints: &Constraints,
 ) -> Result<(usize, f64, f64)> {
-    let price = forecast.prices[t].price_sek_per_kwh;
+    let price_point = &forecast.prices[t];
+    let import_price = price_point.price_sek_per_kwh;
+    let export_price = price_point.export_price();
 
     // Calculate cycle penalty from battery degradation and replacement cost
     // cycle_penalty = degradation_per_cycle * replacement_cost (SEK)
     // This represents the economic cost of wearing out the battery
     // Example: LiFePO4 with 0.0001 degradation/cycle and 50,000 SEK cost
     // = 0.0001 * 50000 = 5 SEK per full cycle
-    let cycle_penalty = constraints.battery_degradation_per_cycle
+    let cycle_penalty_per_full_cycle = constraints.battery_degradation_per_cycle
         * constraints.battery_replacement_cost_sek;
 
     // Use battery physical limits (NOT grid limits!)
@@ -140,13 +142,24 @@ fn simulate_action(
         Action::Idle => 0.0,
     };
 
+    // CRITICAL FIX: Calculate actual time step duration from forecast (don't assume 1 hour!)
+    // Forecast resolution varies: 15min, 30min, or 60min depending on provider
+    let dt_hours = (price_point.time_end - price_point.time_start).num_seconds() as f64 / 3600.0;
+    // Validate time step is reasonable (between 1 minute and 4 hours)
+    if dt_hours <= 0.0 || dt_hours > 4.0 {
+        anyhow::bail!(
+            "Invalid time step duration: {} hours (must be between 0 and 4)",
+            dt_hours
+        );
+    }
+
     // Calculate actual SoC change based on energy and capacity
     let energy_kwh = if target_power_w > 0.0 {
-        // Charging: power delivered over 1 hour with efficiency loss
-        (target_power_w / 1000.0) * 1.0 * efficiency
+        // Charging: power delivered over dt_hours with efficiency loss
+        (target_power_w / 1000.0) * dt_hours * efficiency
     } else if target_power_w < 0.0 {
-        // Discharging: power delivered over 1 hour with efficiency loss
-        (target_power_w / 1000.0) * 1.0 / efficiency
+        // Discharging: power delivered over dt_hours with efficiency loss
+        (target_power_w / 1000.0) * dt_hours / efficiency
     } else {
         0.0
     };
@@ -166,18 +179,36 @@ fn simulate_action(
     let max_b = bucket(constraints.max_soc_percent);
     next = next.clamp(min_b as i64, max_b as i64);
 
-    // Cost calculation: energy cost + cycle degradation penalty
-    let mut cost = energy_kwh * price;
+    // Cost calculation: energy cost + cycle degradation penalty (proportional to throughput)
+    // CRITICAL FIX: Cycle penalty must be proportional to energy moved
+    // A full 0-100% cycle costs cycle_penalty_per_full_cycle
+    // A partial cycle costs: (energy_throughput / capacity) * cycle_penalty_per_full_cycle
+    //
+    // CRITICAL FIX: Use different prices for import (charging) vs export (discharging)
+    // When charging (positive energy): we pay import_price
+    // When discharging (negative energy): we earn export_price (typically < import_price)
+    let mut cost = if energy_kwh > 0.0 {
+        // Charging: buying from grid at import price
+        energy_kwh * import_price
+    } else {
+        // Discharging: selling to grid at export price
+        // Note: energy_kwh is negative, so this is a negative cost (profit)
+        energy_kwh * export_price
+    };
+
     if matches!(action, Action::Charge | Action::Discharge) {
-        cost += cycle_penalty;
+        // Calculate proportional cycle cost based on energy throughput
+        let cycle_fraction = energy_kwh.abs() / battery_capacity;
+        cost += cycle_fraction * cycle_penalty_per_full_cycle;
     }
 
     // Validate cost is finite to prevent undefined behavior in min_by comparisons
     if !cost.is_finite() {
         anyhow::bail!(
-            "Cost calculation resulted in non-finite value: energy_kwh={}, price={}, cost={}",
+            "Cost calculation resulted in non-finite value: energy_kwh={}, import_price={}, export_price={}, cost={}",
             energy_kwh,
-            price,
+            import_price,
+            export_price,
             cost
         );
     }

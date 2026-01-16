@@ -151,6 +151,13 @@ pub struct BatteryConfig {
     #[serde(default = "default_battery_replacement_cost")]
     #[validate(range(min = 0.0, max = 1000000.0))]
     pub replacement_cost_sek: f64,
+
+    /// Ambient temperature (°C) - used for battery thermal simulation
+    /// Typical values: Nordic winter: -10°C, Summer: 20°C, Indoor: 15-25°C
+    /// Default: 15°C (typical Nordic garage/outdoor installation)
+    #[serde(default = "default_ambient_temp_c")]
+    #[validate(range(min = -40.0, max = 50.0))]
+    pub ambient_temp_c: f64,
 }
 
 /// Hardware sensor fallback configuration
@@ -311,6 +318,14 @@ pub struct OptimizationConfig {
 
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
+
+    /// Low price charge rate (fraction of max charge power)
+    /// Used when grid price is cheap but battery isn't full
+    /// Range: 0.1 (slow) to 1.0 (max power)
+    /// Default: 0.5 (50% of max charge rate)
+    #[serde(default = "default_low_price_charge_rate")]
+    #[validate(range(min = 0.1, max = 1.0))]
+    pub low_price_charge_rate: f64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -430,6 +445,7 @@ fn default_retry_delay_ms() -> u64 { 1000 }
 fn default_min_soc() -> f64 { 10.0 }
 fn default_max_soc() -> f64 { 95.0 }
 fn default_battery_replacement_cost() -> f64 { 50000.0 } // 50k SEK typical for home battery
+fn default_ambient_temp_c() -> f64 { 15.0 } // Typical Nordic garage/outdoor installation
 fn default_pv_production_kw() -> f64 { 0.0 } // Conservative: assume no PV if sensor unavailable
 fn default_house_load_kw() -> f64 { 2.0 } // Typical household base load
 fn default_hardware_mode() -> HardwareMode { HardwareMode::Simulated }
@@ -442,6 +458,7 @@ fn default_optimization_strategy() -> OptimizationStrategy { OptimizationStrateg
 fn default_max_iterations() -> u32 { 1000 }
 fn default_convergence_threshold() -> f64 { 0.001 }
 fn default_timeout_secs() -> u64 { 300 }
+fn default_low_price_charge_rate() -> f64 { 0.5 }
 fn default_update_interval_hours() -> u32 { 1 }
 fn default_cache_ttl_secs() -> u64 { 3600 }
 fn default_cache_ttl_seconds() -> u64 { 3600 }
