@@ -7,6 +7,16 @@ use async_trait::async_trait;
 use tracing::debug;
 
 /// Modbus-based battery implementation
+///
+/// CRITICAL NETWORK SAFETY:
+/// This struct creates a persistent TCP connection via ModbusClient.
+/// The ModbusClient uses Arc<Mutex<Context>> internally to maintain a single
+/// socket connection across all operations. The reconnect() method replaces
+/// the context in-place without creating new sockets.
+///
+/// WARNING: Do NOT instantiate ModbusBattery repeatedly (e.g., inside a control loop).
+/// Create ONCE at startup and reuse. Repeated instantiation will exhaust
+/// ephemeral ports (~28k on Linux) within 8 hours at 1Hz due to TIME_WAIT state.
 pub struct ModbusBattery {
     client: ModbusClient,
     register_map: Box<dyn RegisterMap>,
@@ -15,6 +25,9 @@ pub struct ModbusBattery {
 
 impl ModbusBattery {
     /// Create a new ModbusBattery with generic register map
+    ///
+    /// IMPORTANT: Call this ONCE at startup, not in a loop.
+    /// The created instance maintains a persistent TCP connection.
     pub async fn new(addr: &str, unit_id: u8) -> Result<Self> {
         let client = ModbusClient::connect(addr, unit_id)
             .await
@@ -149,6 +162,15 @@ impl ModbusBattery {
     /// Health check the Modbus connection
     pub async fn health_check(&self) -> Result<()> {
         self.client.health_check().await
+    }
+
+    /// Reconnect to the Modbus device if connection is lost
+    ///
+    /// SAFE: This method reuses the existing ModbusClient and replaces the
+    /// TCP context in-place without creating new sockets. Safe to call
+    /// from control loops for connection recovery.
+    pub async fn reconnect(&self) -> Result<()> {
+        self.client.reconnect().await
     }
 }
 

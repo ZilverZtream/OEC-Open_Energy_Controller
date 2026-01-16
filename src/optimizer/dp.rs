@@ -153,12 +153,20 @@ fn simulate_action(
         );
     }
 
-    // Calculate actual SoC change based on energy and capacity
+    // CRITICAL POWER CONVENTION:
+    // target_power_w is AC-side power (grid perspective), NOT DC battery energy
+    // This matches battery.rs convention to prevent efficiency double-dip
+    // - Positive = charging (AC from grid -> DC to battery)
+    // - Negative = discharging (DC from battery -> AC to grid)
+    //
+    // Calculate actual SoC change based on AC power and apply efficiency:
+    // - Charging: AC * efficiency = DC energy stored in battery
+    // - Discharging: DC / efficiency = AC energy delivered to grid
     let energy_kwh = if target_power_w > 0.0 {
-        // Charging: power delivered over dt_hours with efficiency loss
+        // Charging: AC power from grid * efficiency = DC energy stored
         (target_power_w / 1000.0) * dt_hours * efficiency
     } else if target_power_w < 0.0 {
-        // Discharging: power delivered over dt_hours with efficiency loss
+        // Discharging: DC energy from battery / efficiency = AC power to grid
         (target_power_w / 1000.0) * dt_hours / efficiency
     } else {
         0.0

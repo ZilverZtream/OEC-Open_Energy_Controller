@@ -28,13 +28,19 @@ pub struct PowerSnapshot {
 }
 
 impl PowerSnapshot {
-    /// Create a new power snapshot
+    /// Create a new power snapshot with explicit timestamp
+    ///
+    /// CRITICAL FIX: Timestamp must be captured BEFORE data collection begins,
+    /// not after. Modbus polling over 9600 baud serial can take 2-3 seconds.
+    /// If timestamp is captured after polling, the PID controller's derivative
+    /// term will calculate dt incorrectly, leading to control instability.
     pub fn new(
         pv_kw: f64,
         house_kw: f64,
         battery_kw: f64,
         ev_kw: f64,
         grid_kw: f64,
+        timestamp: chrono::DateTime<chrono::Utc>,
     ) -> Self {
         Self {
             pv_kw,
@@ -42,8 +48,23 @@ impl PowerSnapshot {
             battery_kw,
             ev_kw,
             grid_kw,
-            timestamp: chrono::Utc::now(),
+            timestamp,
         }
+    }
+
+    /// Create a new power snapshot with current timestamp
+    ///
+    /// WARNING: Only use this for testing or when data collection is instantaneous.
+    /// For production code with real sensors, capture timestamp before polling
+    /// and use new() with explicit timestamp.
+    pub fn new_now(
+        pv_kw: f64,
+        house_kw: f64,
+        battery_kw: f64,
+        ev_kw: f64,
+        grid_kw: f64,
+    ) -> Self {
+        Self::new(pv_kw, house_kw, battery_kw, ev_kw, grid_kw, chrono::Utc::now())
     }
 
     /// Verify power balance holds (sources = sinks)
@@ -126,48 +147,48 @@ mod tests {
     #[test]
     fn test_power_balance_simple() {
         // PV = House (perfect balance, no battery, no EV, no grid)
-        let snapshot = PowerSnapshot::new(5.0, 5.0, 0.0, 0.0, 0.0);
+        let snapshot = PowerSnapshot::new_now(5.0, 5.0, 0.0, 0.0, 0.0);
         assert!(snapshot.verify_power_balance());
     }
 
     #[test]
     fn test_power_balance_with_battery_charging() {
         // PV 5kW = House 3kW + Battery 2kW (charging)
-        let snapshot = PowerSnapshot::new(5.0, 3.0, 2.0, 0.0, 0.0);
+        let snapshot = PowerSnapshot::new_now(5.0, 3.0, 2.0, 0.0, 0.0);
         assert!(snapshot.verify_power_balance());
     }
 
     #[test]
     fn test_power_balance_with_battery_discharging() {
         // PV 2kW + Battery 3kW (discharging) = House 5kW
-        let snapshot = PowerSnapshot::new(2.0, 5.0, -3.0, 0.0, 0.0);
+        let snapshot = PowerSnapshot::new_now(2.0, 5.0, -3.0, 0.0, 0.0);
         assert!(snapshot.verify_power_balance());
     }
 
     #[test]
     fn test_power_balance_with_grid_import() {
         // PV 2kW + Grid 3kW = House 5kW
-        let snapshot = PowerSnapshot::new(2.0, 5.0, 0.0, 0.0, 3.0);
+        let snapshot = PowerSnapshot::new_now(2.0, 5.0, 0.0, 0.0, 3.0);
         assert!(snapshot.verify_power_balance());
     }
 
     #[test]
     fn test_power_balance_with_grid_export() {
         // PV 10kW = House 3kW + Grid -7kW (export)
-        let snapshot = PowerSnapshot::new(10.0, 3.0, 0.0, 0.0, -7.0);
+        let snapshot = PowerSnapshot::new_now(10.0, 3.0, 0.0, 0.0, -7.0);
         assert!(snapshot.verify_power_balance());
     }
 
     #[test]
     fn test_power_balance_complex() {
         // PV 8kW + Battery -2kW (discharge) = House 4kW + EV 3kW + Grid -3kW (export)
-        let snapshot = PowerSnapshot::new(8.0, 4.0, -2.0, 3.0, -3.0);
+        let snapshot = PowerSnapshot::new_now(8.0, 4.0, -2.0, 3.0, -3.0);
         assert!(snapshot.verify_power_balance());
     }
 
     #[test]
     fn test_exceeds_fuse_limit() {
-        let snapshot = PowerSnapshot::new(0.0, 15.0, 0.0, 0.0, 15.0);
+        let snapshot = PowerSnapshot::new_now(0.0, 15.0, 0.0, 0.0, 15.0);
         assert!(snapshot.exceeds_fuse_limit(10.0));
         assert!(!snapshot.exceeds_fuse_limit(20.0));
     }
@@ -175,20 +196,20 @@ mod tests {
     #[test]
     fn test_self_consumption() {
         // PV 10kW, House 3kW, export 7kW -> self-consumption = 3kW
-        let snapshot = PowerSnapshot::new(10.0, 3.0, 0.0, 0.0, -7.0);
+        let snapshot = PowerSnapshot::new_now(10.0, 3.0, 0.0, 0.0, -7.0);
         assert_eq!(snapshot.self_consumption_kw(), 3.0);
     }
 
     #[test]
     fn test_self_sufficiency_ratio() {
         // PV 5kW, House 10kW, Grid 5kW -> 50% self-sufficient
-        let snapshot = PowerSnapshot::new(5.0, 10.0, 0.0, 0.0, 5.0);
+        let snapshot = PowerSnapshot::new_now(5.0, 10.0, 0.0, 0.0, 5.0);
         assert!((snapshot.self_sufficiency_ratio() - 0.5).abs() < 0.01);
     }
 
     #[test]
     fn test_display() {
-        let snapshot = PowerSnapshot::new(5.0, 3.0, 1.0, 1.0, 0.0);
+        let snapshot = PowerSnapshot::new_now(5.0, 3.0, 1.0, 1.0, 0.0);
         let display = format!("{}", snapshot);
         assert!(display.contains("PV: 5.00kW"));
         assert!(display.contains("House: 3.00kW"));

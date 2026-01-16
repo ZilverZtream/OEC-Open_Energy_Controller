@@ -9,8 +9,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Model Registry for managing multiple models
+///
+/// CRITICAL FIX: Changed from Box<dyn MLModel> to Arc<dyn MLModel>
+/// to enable model sharing across threads without ownership transfer.
+/// Arc allows multiple references to the same model, fixing the "placebo ML engine"
+/// issue where get() always returned None.
 pub struct ModelRegistry {
-    models: Arc<RwLock<std::collections::HashMap<String, Box<dyn MLModel>>>>,
+    models: Arc<RwLock<std::collections::HashMap<String, Arc<dyn MLModel>>>>,
 }
 
 impl ModelRegistry {
@@ -20,19 +25,25 @@ impl ModelRegistry {
         }
     }
 
-    /// Register a new model
-    pub async fn register(&self, model_id: String, model: Box<dyn MLModel>) {
+    /// Register a new model (takes ownership via Arc)
+    pub async fn register(&self, model_id: String, model: Arc<dyn MLModel>) {
         let mut models = self.models.write().await;
         models.insert(model_id, model);
     }
 
+    /// Register a new model from a boxed instance (converts to Arc internally)
+    pub async fn register_boxed(&self, model_id: String, model: Box<dyn MLModel>) {
+        let arc_model: Arc<dyn MLModel> = model.into();
+        self.register(model_id, arc_model).await;
+    }
+
     /// Get a model by ID
-    pub async fn get(&self, _model_id: &str) -> Option<Box<dyn MLModel>> {
-        let _models = self.models.read().await;
-        // Since we can't clone Box<dyn MLModel> directly, we return None for now
-        // In a real implementation, we'd need to implement Clone for MLModel
-        // or use Arc<dyn MLModel> instead
-        None
+    ///
+    /// Returns an Arc clone of the model, allowing multiple consumers
+    /// to use the same model instance concurrently.
+    pub async fn get(&self, model_id: &str) -> Option<Arc<dyn MLModel>> {
+        let models = self.models.read().await;
+        models.get(model_id).map(Arc::clone)
     }
 
     /// List all registered model IDs
@@ -72,20 +83,32 @@ impl InferenceEngine {
         }
     }
 
-    /// Register a model with the engine
+    /// Register a model with the engine (Box version for backwards compatibility)
     pub async fn register_model(&self, model_id: String, model: Box<dyn MLModel>) {
+        self.registry.register_boxed(model_id, model).await;
+    }
+
+    /// Register a model with the engine (Arc version for efficiency)
+    pub async fn register_model_arc(&self, model_id: String, model: Arc<dyn MLModel>) {
         self.registry.register(model_id, model).await;
     }
 
     /// Run inference with a specific model
+    ///
+    /// CRITICAL FIX: Now properly retrieves and uses registered models
+    /// instead of always returning an error.
     pub async fn predict(
         &self,
         model_id: &str,
-        _features: &FeatureVector,
+        features: &FeatureVector,
     ) -> Result<Prediction> {
-        // In a real implementation, we'd retrieve the model and run prediction
-        // For now, return a placeholder
-        anyhow::bail!("Model '{}' not found", model_id)
+        let model = self
+            .registry
+            .get(model_id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_id))?;
+
+        model.predict(features)
     }
 
     /// List available models
@@ -199,7 +222,7 @@ mod tests {
         // Register a model
         let model = LinearRegressionModel::dummy_model(3);
         registry
-            .register("test_model".to_string(), Box::new(model))
+            .register_boxed("test_model".to_string(), Box::new(model))
             .await;
 
         assert_eq!(registry.count().await, 1);
@@ -207,10 +230,18 @@ mod tests {
         let model_ids = registry.list_model_ids().await;
         assert!(model_ids.contains(&"test_model".to_string()));
 
+        // Test get() - should return the model (not None)
+        let retrieved_model = registry.get("test_model").await;
+        assert!(retrieved_model.is_some(), "Model should be retrievable after registration");
+
         // Unregister
         let removed = registry.unregister("test_model").await;
         assert!(removed);
         assert_eq!(registry.count().await, 0);
+
+        // After unregister, get() should return None
+        let retrieved_after_unregister = registry.get("test_model").await;
+        assert!(retrieved_after_unregister.is_none(), "Model should not be retrievable after unregistration");
     }
 
     #[tokio::test]

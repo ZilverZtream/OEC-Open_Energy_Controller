@@ -35,16 +35,20 @@ pub struct PhysicalConstraints {
 
 impl Default for PhysicalConstraints {
     fn default() -> Self {
+        // CRITICAL SAFETY FIX: Default to 0.0 (Safe Mode) for all power values
+        // If configuration file is missing, corrupt, or fails to load,
+        // the system MUST refuse to operate until explicit positive limits are loaded.
+        // This prevents the controller from ramping power beyond actual fuse ratings.
         Self {
-            max_grid_import_kw: 16.0,     // 16kW = ~70A at 230V single-phase
-            max_grid_export_kw: 16.0,
-            max_battery_charge_kw: 5.0,
-            max_battery_discharge_kw: 5.0,
-            evse_min_current_a: 6.0,       // IEC 61851 minimum
-            evse_max_current_a: 32.0,      // Typical home installation
+            max_grid_import_kw: 0.0,       // SAFE MODE: No power until explicitly configured
+            max_grid_export_kw: 0.0,       // SAFE MODE: No power until explicitly configured
+            max_battery_charge_kw: 0.0,    // SAFE MODE: No power until explicitly configured
+            max_battery_discharge_kw: 0.0, // SAFE MODE: No power until explicitly configured
+            evse_min_current_a: 6.0,       // IEC 61851 minimum (informational only)
+            evse_max_current_a: 0.0,       // SAFE MODE: No EV charging until configured
             phases: 1,
-            max_current_per_phase_a: Some(32.0),
-            grid_voltage_v: 230.0,
+            max_current_per_phase_a: Some(0.0), // SAFE MODE
+            grid_voltage_v: 230.0,         // Standard European voltage (informational)
         }
     }
 }
@@ -209,12 +213,21 @@ impl AllConstraints {
         }
 
         // Now check physical constraints ranges
+        // CRITICAL: Enforce explicit configuration (reject default 0.0 values)
         if self.physical.max_grid_import_kw <= 0.0 {
-            return Err("max_grid_import_kw must be positive".to_string());
+            return Err("max_grid_import_kw must be positive (0.0 = safe mode, explicit config required)".to_string());
         }
 
         if self.physical.max_battery_charge_kw <= 0.0 {
-            return Err("max_battery_charge_kw must be positive".to_string());
+            return Err("max_battery_charge_kw must be positive (0.0 = safe mode, explicit config required)".to_string());
+        }
+
+        if self.physical.max_battery_discharge_kw <= 0.0 {
+            return Err("max_battery_discharge_kw must be positive (0.0 = safe mode, explicit config required)".to_string());
+        }
+
+        if self.physical.evse_max_current_a <= 0.0 {
+            return Err("evse_max_current_a must be positive (0.0 = safe mode, explicit config required)".to_string());
         }
 
         if self.physical.evse_min_current_a < 6.0 {
@@ -248,16 +261,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_constraints() {
+    fn test_default_constraints_safe_mode() {
+        // Default constraints should be in SAFE MODE (all 0.0 power limits)
+        // and validation should FAIL to prevent operation without explicit config
         let constraints = AllConstraints::default();
-        assert!(constraints.validate().is_ok());
+        assert!(constraints.validate().is_err(), "Default constraints should fail validation (safe mode)");
+
+        // Verify all power limits are 0.0 (safe mode)
+        assert_eq!(constraints.physical.max_grid_import_kw, 0.0);
+        assert_eq!(constraints.physical.max_grid_export_kw, 0.0);
+        assert_eq!(constraints.physical.max_battery_charge_kw, 0.0);
+        assert_eq!(constraints.physical.max_battery_discharge_kw, 0.0);
+        assert_eq!(constraints.physical.evse_max_current_a, 0.0);
     }
 
     #[test]
-    fn test_physical_constraints_default() {
+    fn test_physical_constraints_default_safe_mode() {
         let physical = PhysicalConstraints::default();
         assert_eq!(physical.phases, 1);
-        assert!(physical.max_grid_import_kw > 0.0);
+        // CRITICAL: Default should be 0.0 (safe mode), NOT positive
+        assert_eq!(physical.max_grid_import_kw, 0.0, "Default must be safe mode (0.0)");
+        assert_eq!(physical.max_battery_charge_kw, 0.0, "Default must be safe mode (0.0)");
+        assert_eq!(physical.evse_max_current_a, 0.0, "Default must be safe mode (0.0)");
     }
 
     #[test]

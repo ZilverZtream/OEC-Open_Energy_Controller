@@ -70,11 +70,37 @@ pub enum ScheduleValidationError {
 }
 
 impl Schedule {
+    /// Get the target power at a specific timestamp
+    ///
+    /// CRITICAL FIX: Implements "hold previous" strategy for small gaps.
+    /// If timestamp falls in a gap, returns the power from the previous entry
+    /// (if gap is ≤60 seconds). This prevents controller from idling during
+    /// minor schedule alignment issues while still rejecting large gaps.
     pub fn power_at(&self, t: DateTime<Utc>) -> Option<f64> {
-        self.entries
+        // First, try exact match
+        if let Some(entry) = self.entries.iter().find(|e| t >= e.time_start && t < e.time_end) {
+            return Some(entry.target_power_w);
+        }
+
+        // No exact match - check if we're in a small gap after an entry
+        // Find the most recent entry that ended before 't'
+        const MAX_GAP_SECONDS: i64 = 60;
+        let recent_entry = self
+            .entries
             .iter()
-            .find(|e| t >= e.time_start && t < e.time_end)
-            .map(|e| e.target_power_w)
+            .filter(|e| e.time_end <= t)
+            .max_by_key(|e| e.time_end);
+
+        if let Some(entry) = recent_entry {
+            let gap_duration = t.signed_duration_since(entry.time_end);
+            if gap_duration.num_seconds() <= MAX_GAP_SECONDS {
+                // Small gap - hold previous value
+                return Some(entry.target_power_w);
+            }
+        }
+
+        // Large gap or no previous entry - return None
+        None
     }
 
     /// Validate that entries cover the full schedule window without gaps or overlaps.

@@ -264,6 +264,15 @@ impl Battery for SimulatedBattery {
         let mut st = self.state.write().await;
         st.power_w = watts;
 
+        // CRITICAL POWER CONVENTION:
+        // `watts` parameter is AC-side power (grid perspective)
+        // - Positive = charging (drawing from grid)
+        // - Negative = discharging (feeding to grid)
+        // The battery stores DC power, so we apply efficiency conversion:
+        // - Charging: AC * efficiency = DC stored
+        // - Discharging: DC / efficiency = AC delivered
+        // This matches the optimizer's convention in dp.rs to prevent efficiency double-dip
+
         // 60s step skeleton
         let dt_h = 60.0 / 3600.0;
         let cap_kwh = self.caps.capacity_kwh.max(0.1);
@@ -275,9 +284,12 @@ impl Battery for SimulatedBattery {
         } else {
             anyhow::bail!("Invalid battery efficiency: {}. Must be between 0.5 and 1.0", self.caps.efficiency);
         };
+        // Apply efficiency conversion: AC -> DC
         let delta_kwh = if power_kw >= 0.0 {
+            // Charging: AC power * efficiency = DC energy stored
             power_kw * dt_h * eff
         } else {
+            // Discharging: DC energy / efficiency = AC power delivered
             power_kw * dt_h / eff
         };
         let delta_pct = (delta_kwh / cap_kwh) * 100.0;
