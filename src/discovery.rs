@@ -330,15 +330,262 @@ impl DeviceDiscovery {
         }
     }
 
-    /// Listen for mDNS announcements (placeholder for future implementation)
+    /// Listen for mDNS announcements
     pub async fn listen_mdns(&self) -> Result<()> {
         #[cfg(feature = "discovery")]
         {
-            info!("mDNS discovery not yet implemented");
+            let mdns = MdnsListener::new()?;
+            mdns.start_listening().await?;
+        }
+        #[cfg(not(feature = "discovery"))]
+        {
+            info!("mDNS discovery not enabled (requires 'discovery' feature)");
         }
         Ok(())
     }
 }
+
+#[cfg(feature = "discovery")]
+pub mod mdns {
+    use super::*;
+    use mdns_sd::{ServiceDaemon, ServiceEvent};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    /// mDNS service types to discover
+    const MODBUS_SERVICE: &str = "_modbus._tcp.local.";
+    const HTTP_SERVICE: &str = "_http._tcp.local.";
+    const OCPP_SERVICE: &str = "_ocpp._tcp.local.";
+
+    /// Discovered service information from mDNS
+    #[derive(Debug, Clone)]
+    pub struct MdnsService {
+        pub service_name: String,
+        pub service_type: String,
+        pub hostname: String,
+        pub ip_addresses: Vec<IpAddr>,
+        pub port: u16,
+        pub txt_properties: HashMap<String, String>,
+    }
+
+    impl MdnsService {
+        /// Try to convert mDNS service to DiscoveredDevice
+        pub fn to_discovered_device(&self) -> Option<DiscoveredDevice> {
+            let ip = self.ip_addresses.first()?;
+
+            // Determine device type from service type and TXT records
+            let device_type = if self.service_type.contains("modbus") {
+                // Check TXT records for device type hint
+                if let Some(dtype) = self.txt_properties.get("type") {
+                    match dtype.as_str() {
+                        "battery" => DeviceType::ModbusBattery,
+                        "inverter" => DeviceType::ModbusInverter,
+                        "ev_charger" | "evcharger" => DeviceType::ModbusEvCharger,
+                        _ => DeviceType::Unknown,
+                    }
+                } else {
+                    DeviceType::Unknown
+                }
+            } else {
+                DeviceType::Unknown
+            };
+
+            Some(DiscoveredDevice {
+                ip: *ip,
+                port: self.port,
+                device_type,
+                manufacturer: self.txt_properties.get("manufacturer").cloned(),
+                model: self.txt_properties.get("model").cloned(),
+                serial: self.txt_properties.get("serial").cloned(),
+            })
+        }
+    }
+
+    /// mDNS service discovery listener
+    pub struct MdnsListener {
+        daemon: ServiceDaemon,
+        discovered_services: Arc<RwLock<HashMap<String, MdnsService>>>,
+    }
+
+    impl MdnsListener {
+        /// Create a new mDNS listener
+        pub fn new() -> Result<Self> {
+            let daemon = ServiceDaemon::new()
+                .map_err(|e| anyhow::anyhow!("Failed to create mDNS daemon: {}", e))?;
+
+            Ok(Self {
+                daemon,
+                discovered_services: Arc::new(RwLock::new(HashMap::new())),
+            })
+        }
+
+        /// Start listening for mDNS services
+        pub async fn start_listening(&self) -> Result<()> {
+            info!("Starting mDNS service discovery");
+
+            // Browse for each service type
+            let service_types = vec![MODBUS_SERVICE, HTTP_SERVICE, OCPP_SERVICE];
+
+            for service_type in service_types {
+                let receiver = self
+                    .daemon
+                    .browse(service_type)
+                    .map_err(|e| anyhow::anyhow!("Failed to browse {}: {}", service_type, e))?;
+
+                let services = Arc::clone(&self.discovered_services);
+                let service_type_str = service_type.to_string();
+
+                // Spawn background task to handle service events
+                tokio::spawn(async move {
+                    Self::handle_service_events(receiver, services, service_type_str).await;
+                });
+            }
+
+            info!("mDNS listener started for {} service types", service_types.len());
+            Ok(())
+        }
+
+        /// Handle mDNS service events
+        async fn handle_service_events(
+            receiver: mdns_sd::Receiver<ServiceEvent>,
+            services: Arc<RwLock<HashMap<String, MdnsService>>>,
+            service_type: String,
+        ) {
+            while let Ok(event) = receiver.recv_async().await {
+                match event {
+                    ServiceEvent::ServiceResolved(info) => {
+                        info!("mDNS service resolved: {} ({})", info.get_fullname(), service_type);
+
+                        let ip_addresses: Vec<IpAddr> = info
+                            .get_addresses()
+                            .iter()
+                            .map(|addr| IpAddr::from(*addr))
+                            .collect();
+
+                        let txt_properties: HashMap<String, String> = info
+                            .get_properties()
+                            .iter()
+                            .filter_map(|prop| {
+                                let key = prop.key();
+                                let val = prop.val_str();
+                                Some((key.to_string(), val.to_string()))
+                            })
+                            .collect();
+
+                        let service = MdnsService {
+                            service_name: info.get_fullname().to_string(),
+                            service_type: service_type.clone(),
+                            hostname: info.get_hostname().to_string(),
+                            ip_addresses,
+                            port: info.get_port(),
+                            txt_properties,
+                        };
+
+                        // Store the service
+                        let mut services_map = services.write().await;
+                        services_map.insert(info.get_fullname().to_string(), service.clone());
+
+                        // Log discovered device info
+                        if let Some(device) = service.to_discovered_device() {
+                            info!(
+                                "Discovered {:?} via mDNS at {}:{}",
+                                device.device_type, device.ip, device.port
+                            );
+                        }
+                    }
+                    ServiceEvent::ServiceRemoved(_, fullname) => {
+                        info!("mDNS service removed: {}", fullname);
+                        let mut services_map = services.write().await;
+                        services_map.remove(&fullname);
+                    }
+                    ServiceEvent::SearchStarted(_) => {
+                        debug!("mDNS search started for {}", service_type);
+                    }
+                    ServiceEvent::SearchStopped(_) => {
+                        warn!("mDNS search stopped for {}", service_type);
+                    }
+                }
+            }
+        }
+
+        /// Get all currently discovered services
+        pub async fn get_discovered_services(&self) -> Vec<MdnsService> {
+            let services = self.discovered_services.read().await;
+            services.values().cloned().collect()
+        }
+
+        /// Get all discovered devices (converted from services)
+        pub async fn get_discovered_devices(&self) -> Vec<DiscoveredDevice> {
+            let services = self.get_discovered_services().await;
+            services
+                .iter()
+                .filter_map(|s| s.to_discovered_device())
+                .collect()
+        }
+
+        /// Stop the mDNS daemon
+        pub fn shutdown(&self) -> Result<()> {
+            self.daemon
+                .shutdown()
+                .map_err(|e| anyhow::anyhow!("Failed to shutdown mDNS daemon: {}", e))?;
+            info!("mDNS listener shut down");
+            Ok(())
+        }
+    }
+
+    impl Drop for MdnsListener {
+        fn drop(&mut self) {
+            let _ = self.shutdown();
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_mdns_service_to_device_battery() {
+            let mut txt_props = HashMap::new();
+            txt_props.insert("type".to_string(), "battery".to_string());
+            txt_props.insert("manufacturer".to_string(), "Huawei".to_string());
+            txt_props.insert("model".to_string(), "Luna2000".to_string());
+
+            let service = MdnsService {
+                service_name: "battery-1._modbus._tcp.local.".to_string(),
+                service_type: "_modbus._tcp.local.".to_string(),
+                hostname: "battery-1.local.".to_string(),
+                ip_addresses: vec!["192.168.1.100".parse().unwrap()],
+                port: 502,
+                txt_properties: txt_props,
+            };
+
+            let device = service.to_discovered_device().unwrap();
+            assert_eq!(device.device_type, DeviceType::ModbusBattery);
+            assert_eq!(device.manufacturer, Some("Huawei".to_string()));
+            assert_eq!(device.model, Some("Luna2000".to_string()));
+            assert_eq!(device.port, 502);
+        }
+
+        #[test]
+        fn test_mdns_service_to_device_no_type() {
+            let service = MdnsService {
+                service_name: "device-1._modbus._tcp.local.".to_string(),
+                service_type: "_modbus._tcp.local.".to_string(),
+                hostname: "device-1.local.".to_string(),
+                ip_addresses: vec!["192.168.1.101".parse().unwrap()],
+                port: 502,
+                txt_properties: HashMap::new(),
+            };
+
+            let device = service.to_discovered_device().unwrap();
+            assert_eq!(device.device_type, DeviceType::Unknown);
+        }
+    }
+}
+
+#[cfg(feature = "discovery")]
+pub use mdns::MdnsListener;
 
 #[cfg(test)]
 mod tests {
