@@ -5,6 +5,7 @@ mod controller;
 mod discovery;
 mod domain;
 mod forecast;
+mod hardware;
 mod modbus;
 mod optimizer;
 mod repo;

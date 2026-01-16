@@ -15,6 +15,8 @@ use crate::{
 };
 
 pub fn router(state: AppState, cfg: &Config) -> Router {
+    use crate::api::{ev_charger, inverter};
+
     Router::new()
         .route("/status", get(get_status))
         .route("/forecast", get(get_forecast))
@@ -23,6 +25,18 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
         .route("/devices", get(list_devices))
         .route("/simulation/step", post(simulation_step))
         .route("/healthz", get(healthz))
+        // EV Charger routes
+        .route("/ev-charger/state", get(ev_charger::get_charger_state))
+        .route("/ev-charger/current", post(ev_charger::set_charging_current))
+        .route("/ev-charger/start", post(ev_charger::start_charging))
+        .route("/ev-charger/stop", post(ev_charger::stop_charging))
+        .route("/ev-charger/sessions", get(ev_charger::get_charging_sessions))
+        // Inverter routes
+        .route("/inverter/state", get(inverter::get_inverter_state))
+        .route("/inverter/mode", post(inverter::set_inverter_mode))
+        .route("/inverter/export-limit", post(inverter::set_export_limit))
+        .route("/inverter/production", get(inverter::get_production_history))
+        .route("/inverter/efficiency", get(inverter::get_efficiency_stats))
         .with_state(state)
         .layer(crate::auth::auth_layer(cfg.auth.token.clone()))
 }
