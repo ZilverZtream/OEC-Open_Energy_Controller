@@ -1,8 +1,11 @@
 #[cfg(feature = "swagger")]
 pub mod openapi;
 pub mod v1;
+pub mod battery;
 pub mod ev_charger;
+pub mod grid;
 pub mod inverter;
+pub mod weather;
 
 use axum::Router;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};

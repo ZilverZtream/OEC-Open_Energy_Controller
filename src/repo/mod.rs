@@ -25,3 +25,16 @@ impl Repositories {
 
 #[cfg(feature = "db")]
 pub mod pg;
+
+#[cfg(feature = "db")]
+pub mod battery_states;
+#[cfg(feature = "db")]
+pub mod devices;
+#[cfg(feature = "db")]
+pub mod schedules;
+#[cfg(feature = "db")]
+pub mod prices;
+#[cfg(feature = "db")]
+pub mod consumption;
+#[cfg(feature = "db")]
+pub mod production;
