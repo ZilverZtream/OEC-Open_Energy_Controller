@@ -4,9 +4,35 @@
 
 **Progress Tracking:**
 - Total items: ~850+ checkboxes
+- Completed items: ~90 (as of 2026-01-16)
 - Logical ordering: Each section builds on previous
 - Parallelizable: Items within sections can be done concurrently
 - No time estimates: Work at your own pace with your team size
+
+## 🎯 Recent Completions (2026-01-16)
+### ✅ Phase 2: Domain Models
+- Battery, Inverter, EV Charger, Grid domain traits and implementations
+- SimulatedBattery, SimulatedInverter, SimulatedEvCharger with tests
+- Grid limits, tariffs, and connection structs with comprehensive tests
+### ✅ Phase 3: Database Layer
+- 4 migration files: initial schema + EV/inverter states + households + forecasts/optimization
+- DeviceRepository, BatteryStateRepository, ScheduleRepository with SQLx
+- All tables: devices, battery_states, inverter_states, ev_charger_states, households, consumption/production history, forecasts, optimization runs
+### ✅ Phase 4: Hardware Abstraction
+- DeviceFactory pattern with Simulated/Modbus/Mock modes
+- Factory methods for all device types with graceful fallbacks
+- 3 unit tests for hardware factory
+### ✅ Phase 5: Configuration System
+- development.toml and production.toml with comprehensive settings
+- .env.example with 40+ documented environment variables
+- Complete configuration for all subsystems
+### ✅ Phase 12: REST API - Core (Partial)
+- 10 new API endpoints for EV Charger and Inverter management
+- EV Charger: state, set current, start/stop charging, sessions
+- Inverter: state, mode, export limit, production, efficiency stats
+- All endpoints integrated with auth layer and OpenAPI schemas
+
+**Next priorities:** Device discovery (mDNS/Modbus), Weather integration, Advanced optimizers, Real hardware integration
 
 ---
 
@@ -84,10 +110,10 @@
 ### Configuration Files
 - [ ] Create `Cargo.toml` with workspace structure
 - [ ] Add workspace members to `Cargo.toml`
-- [ ] Create `.env.example` with all required env vars
-- [ ] Create `config/development.toml`
+- [x] Create `.env.example` with all required env vars
+- [x] Create `config/development.toml`
 - [ ] Create `config/test.toml`
-- [ ] Create `config/production.toml`
+- [x] Create `config/production.toml`
 - [ ] Create `docker-compose.yml` (postgres, grafana, prometheus)
 - [ ] Create `docker-compose.test.yml` (for testing)
 - [ ] Create `Dockerfile` for production build
@@ -265,65 +291,65 @@
 - [ ] Implement `Price` newtype (SEK/kWh)
 - [ ] Implement `Duration` type helpers
 - [ ] Implement `Timestamp` type helpers
-- [ ] Add unit tests for all domain types
+- [x] Add unit tests for all domain types
 - [ ] Add `Display` and `Debug` implementations
 - [ ] Add `serde` serialization for all types
 
 ### Battery Domain
-- [ ] Create `src/domain/battery/mod.rs`
-- [ ] Create `src/domain/battery/traits.rs`
-- [ ] Define `Battery` trait with async methods
-- [ ] Define `read_state() -> Result<BatteryState>` method
-- [ ] Define `set_power(watts: Power) -> Result<()>` method
-- [ ] Define `capabilities() -> BatteryCapabilities` method
+- [x] Create `src/domain/battery/mod.rs`
+- [x] Create `src/domain/battery/traits.rs`
+- [x] Define `Battery` trait with async methods
+- [x] Define `read_state() -> Result<BatteryState>` method
+- [x] Define `set_power(watts: Power) -> Result<()>` method
+- [x] Define `capabilities() -> BatteryCapabilities` method
 - [ ] Define `health_check() -> Result<HealthStatus>` method
-- [ ] Create `BatteryState` struct (SoC, power, voltage, temperature, health)
-- [ ] Create `BatteryCapabilities` struct (capacity, max charge/discharge, efficiency)
+- [x] Create `BatteryState` struct (SoC, power, voltage, temperature, health)
+- [x] Create `BatteryCapabilities` struct (capacity, max charge/discharge, efficiency)
 - [ ] Create `BatteryCommand` enum (Charge, Discharge, Idle, Standby)
 - [ ] Create `BatteryError` enum with thiserror derives
 - [ ] Create `BatteryStatus` enum (Charging, Discharging, Idle, Fault, Offline)
 - [ ] Create `BatteryChemistry` enum (LiFePO4, NMC, LTO, etc.)
 - [ ] Create `DegradationModel` struct (cycle count, health %, degradation rate)
-- [ ] Implement `Default` for `BatteryState`
-- [ ] Implement validation for battery commands (power limits, SoC bounds)
-- [ ] Add unit tests for domain logic
-- [ ] Document all public APIs with examples
+- [x] Implement `Default` for `BatteryState`
+- [x] Implement validation for battery commands (power limits, SoC bounds)
+- [x] Add unit tests for domain logic
+- [x] Document all public APIs with examples
 
 ### Inverter Domain
-- [ ] Create `src/domain/inverter/mod.rs`
-- [ ] Create `src/domain/inverter/traits.rs`
-- [ ] Define `Inverter` trait
-- [ ] Define `read_state() -> Result<InverterState>` method
-- [ ] Define `set_mode(mode: InverterMode) -> Result<()>` method
-- [ ] Create `InverterState` struct (AC power, DC power, efficiency, temperature)
-- [ ] Create `InverterMode` enum (Grid-tied, Off-grid, Backup, etc.)
-- [ ] Create `InverterCapabilities` struct (max AC power, max DC power, etc.)
+- [x] Create `src/domain/inverter/mod.rs`
+- [x] Create `src/domain/inverter/traits.rs`
+- [x] Define `Inverter` trait
+- [x] Define `read_state() -> Result<InverterState>` method
+- [x] Define `set_mode(mode: InverterMode) -> Result<()>` method
+- [x] Create `InverterState` struct (AC power, DC power, efficiency, temperature)
+- [x] Create `InverterMode` enum (Grid-tied, Off-grid, Backup, etc.)
+- [x] Create `InverterCapabilities` struct (max AC power, max DC power, etc.)
 - [ ] Create `InverterError` enum
-- [ ] Add unit tests for inverter domain
+- [x] Add unit tests for inverter domain
 
 ### EV Charger Domain
-- [ ] Create `src/domain/ev_charger/mod.rs`
-- [ ] Create `src/domain/ev_charger/traits.rs`
-- [ ] Define `EvCharger` trait
-- [ ] Define `read_state() -> Result<ChargerState>` method
-- [ ] Define `set_current(amps: Current) -> Result<()>` method
-- [ ] Define `start_charging() -> Result<()>` method
-- [ ] Define `stop_charging() -> Result<()>` method
-- [ ] Create `ChargerState` struct (connected, charging, power, energy delivered)
-- [ ] Create `ChargerStatus` enum (Available, Preparing, Charging, Finishing, Faulted)
-- [ ] Create `ChargerCapabilities` struct (max current, phases, connector type)
-- [ ] Create `ConnectorType` enum (Type2, CCS, CHAdeMO)
+- [x] Create `src/domain/ev_charger/mod.rs`
+- [x] Create `src/domain/ev_charger/traits.rs`
+- [x] Define `EvCharger` trait
+- [x] Define `read_state() -> Result<ChargerState>` method
+- [x] Define `set_current(amps: Current) -> Result<()>` method
+- [x] Define `start_charging() -> Result<()>` method
+- [x] Define `stop_charging() -> Result<()>` method
+- [x] Create `ChargerState` struct (connected, charging, power, energy delivered)
+- [x] Create `ChargerStatus` enum (Available, Preparing, Charging, Finishing, Faulted)
+- [x] Create `ChargerCapabilities` struct (max current, phases, connector type)
+- [x] Create `ConnectorType` enum (Type2, CCS, CHAdeMO)
 - [ ] Create `V2XCapabilities` struct (bidirectional, max discharge power)
 - [ ] Create `ChargerError` enum
-- [ ] Add unit tests for EV charger domain
+- [x] Add unit tests for EV charger domain
 
 ### Grid Connection Domain
-- [ ] Create `src/domain/grid/mod.rs`
-- [ ] Create `GridConnection` struct (import/export power, frequency, voltage)
-- [ ] Create `GridLimits` struct (max import/export, fuse rating)
-- [ ] Create `GridTariff` struct (time-of-use rates, fixed fees)
-- [ ] Create `GridStatus` enum (Normal, Blackout, Islanded)
-- [ ] Add unit tests for grid domain
+- [x] Create `src/domain/grid/mod.rs`
+- [x] Create `GridConnection` struct (import/export power, frequency, voltage)
+- [x] Create `GridLimits` struct (max import/export, fuse rating)
+- [x] Create `GridTariff` struct (time-of-use rates, fixed fees)
+- [x] Create `GridStatus` enum (Normal, Blackout, Islanded)
+- [x] Add unit tests for grid domain
 
 ### Schedule & Optimization Domain
 - [ ] Create `src/domain/schedule.rs`
@@ -333,7 +359,7 @@
 - [ ] Implement `Schedule::validate()` method (check bounds, gaps, etc.)
 - [ ] Create `OptimizationObjective` enum (MinimizeCost, MaximizeArbitrage, etc.)
 - [ ] Create `Constraints` struct (min SoC, max cycles, grid limits)
-- [ ] Add unit tests for schedule logic
+- [x] Add unit tests for schedule logic
 
 ### Forecast Domain
 - [ ] Create `src/domain/forecast.rs`
@@ -346,7 +372,7 @@
 - [ ] Create `Forecast24h` struct (combines price, consumption, production)
 - [ ] Create `ForecastConfidence` enum (High, Medium, Low)
 - [ ] Add interpolation method for forecasts
-- [ ] Add unit tests for forecast structures
+- [x] Add unit tests for forecast structures
 
 ---
 
@@ -363,26 +389,26 @@
 - [ ] Implement graceful shutdown for DB connections
 
 ### Migration Files
-- [ ] Create `migrations/20250101000000_initial_schema.sql`
-- [ ] Create `devices` table (id, type, manufacturer, model, ip, port, config, discovered_at, last_seen)
-- [ ] Add indexes on `devices(device_type)`, `devices(ip)`
-- [ ] Create `battery_states` table (id, device_id, timestamp, soc_percent, power_w, voltage_v, temperature_c, health_percent)
-- [ ] Add index on `battery_states(device_id, timestamp DESC)`
+- [x] Create `migrations/20250101000000_initial_schema.sql`
+- [x] Create `devices` table (id, type, manufacturer, model, ip, port, config, discovered_at, last_seen)
+- [x] Add indexes on `devices(device_type)`, `devices(ip)`
+- [x] Create `battery_states` table (id, device_id, timestamp, soc_percent, power_w, voltage_v, temperature_c, health_percent)
+- [x] Add index on `battery_states(device_id, timestamp DESC)`
 - [ ] Add partitioning strategy for `battery_states` (by month)
-- [ ] Create `inverter_states` table
-- [ ] Add index on `inverter_states(device_id, timestamp DESC)`
-- [ ] Create `ev_charger_states` table
-- [ ] Add index on `ev_charger_states(device_id, timestamp DESC)`
-- [ ] Create `electricity_prices` table (id, timestamp, price_sek_per_kwh, source, area)
-- [ ] Add unique constraint on `electricity_prices(timestamp, area, source)`
-- [ ] Create `consumption_history` table (id, household_id, timestamp, power_w, energy_kwh)
-- [ ] Create `production_history` table (id, household_id, timestamp, power_w, energy_kwh)
-- [ ] Create `schedules` table (id, device_id, created_at, valid_from, valid_until, schedule_json, optimizer_version, cost_estimate)
-- [ ] Create `optimization_runs` table (id, created_at, duration_ms, objective, constraints_json, result_json)
-- [ ] Create `forecast_cache` table (id, forecast_type, created_at, valid_until, data_json)
-- [ ] Create `households` table (id, name, location, grid_connection_kw, created_at)
-- [ ] Create `user_preferences` table (id, household_id, min_soc, max_cycles_per_day, prefer_solar, v2g_enabled)
-- [ ] Add foreign key constraints
+- [x] Create `inverter_states` table
+- [x] Add index on `inverter_states(device_id, timestamp DESC)`
+- [x] Create `ev_charger_states` table
+- [x] Add index on `ev_charger_states(device_id, timestamp DESC)`
+- [x] Create `electricity_prices` table (id, timestamp, price_sek_per_kwh, source, area)
+- [x] Add unique constraint on `electricity_prices(timestamp, area, source)`
+- [x] Create `consumption_history` table (id, household_id, timestamp, power_w, energy_kwh)
+- [x] Create `production_history` table (id, household_id, timestamp, power_w, energy_kwh)
+- [x] Create `schedules` table (id, device_id, created_at, valid_from, valid_until, schedule_json, optimizer_version, cost_estimate)
+- [x] Create `optimization_runs` table (id, created_at, duration_ms, objective, constraints_json, result_json)
+- [x] Create `forecast_cache` table (id, forecast_type, created_at, valid_until, data_json)
+- [x] Create `households` table (id, name, location, grid_connection_kw, created_at)
+- [x] Create `user_preferences` table (id, household_id, min_soc, max_cycles_per_day, prefer_solar, v2g_enabled)
+- [x] Add foreign key constraints
 - [ ] Add triggers for `updated_at` timestamps
 - [ ] Create views for common queries
 
@@ -402,38 +428,38 @@
 - [ ] Add conversion methods from DB models to domain types
 
 ### Repository Pattern - Device Repository
-- [ ] Create `src/database/repositories/mod.rs`
-- [ ] Create `src/database/repositories/device.rs`
-- [ ] Create `DeviceRepository` struct with `PgPool`
-- [ ] Implement `insert_device(&Device) -> Result<Uuid>` method
-- [ ] Implement `find_by_id(Uuid) -> Result<Option<Device>>` method
+- [x] Create `src/database/repositories/mod.rs`
+- [x] Create `src/database/repositories/device.rs`
+- [x] Create `DeviceRepository` struct with `PgPool`
+- [x] Implement `insert_device(&Device) -> Result<Uuid>` method
+- [x] Implement `find_by_id(Uuid) -> Result<Option<Device>>` method
 - [ ] Implement `find_by_ip(IpAddr) -> Result<Option<Device>>` method
-- [ ] Implement `find_by_type(DeviceType) -> Result<Vec<Device>>` method
-- [ ] Implement `update_last_seen(Uuid) -> Result<()>` method
-- [ ] Implement `delete(Uuid) -> Result<()>` method
-- [ ] Implement `list_all() -> Result<Vec<Device>>` method
+- [x] Implement `find_by_type(DeviceType) -> Result<Vec<Device>>` method
+- [x] Implement `update_last_seen(Uuid) -> Result<()>` method
+- [x] Implement `delete(Uuid) -> Result<()>` method
+- [x] Implement `list_all() -> Result<Vec<Device>>` method
 - [ ] Add query logging with `tracing`
-- [ ] Add unit tests with `sqlx::test`
+- [x] Add unit tests with `sqlx::test`
 - [ ] Add integration tests with test database
 
 ### Repository Pattern - Battery State Repository
-- [ ] Create `src/database/repositories/battery_state.rs`
-- [ ] Create `BatteryStateRepository` struct
-- [ ] Implement `insert_state(&BatteryState) -> Result<i64>` method
-- [ ] Implement `insert_batch(Vec<BatteryState>) -> Result<()>` method
-- [ ] Implement `find_latest(device_id: Uuid) -> Result<Option<BatteryState>>` method
-- [ ] Implement `find_range(device_id, start, end) -> Result<Vec<BatteryState>>` method
+- [x] Create `src/database/repositories/battery_state.rs`
+- [x] Create `BatteryStateRepository` struct
+- [x] Implement `insert_state(&BatteryState) -> Result<i64>` method
+- [x] Implement `insert_batch(Vec<BatteryState>) -> Result<()>` method
+- [x] Implement `find_latest(device_id: Uuid) -> Result<Option<BatteryState>>` method
+- [x] Implement `find_range(device_id, start, end) -> Result<Vec<BatteryState>>` method
 - [ ] Implement `get_statistics(device_id, duration) -> Result<BatteryStats>` method
-- [ ] Implement cleanup for old data (>90 days)
+- [x] Implement cleanup for old data (>90 days)
 - [ ] Add integration tests
 
 ### Repository Pattern - Schedule Repository
-- [ ] Create `src/database/repositories/schedule.rs`
-- [ ] Create `ScheduleRepository` struct
-- [ ] Implement `insert_schedule(&Schedule) -> Result<Uuid>` method
-- [ ] Implement `find_active(device_id, timestamp) -> Result<Option<Schedule>>` method
-- [ ] Implement `find_by_id(Uuid) -> Result<Option<Schedule>>` method
-- [ ] Implement `list_for_device(device_id) -> Result<Vec<Schedule>>` method
+- [x] Create `src/database/repositories/schedule.rs`
+- [x] Create `ScheduleRepository` struct
+- [x] Implement `insert_schedule(&Schedule) -> Result<Uuid>` method
+- [x] Implement `find_active(device_id, timestamp) -> Result<Option<Schedule>>` method
+- [x] Implement `find_by_id(Uuid) -> Result<Option<Schedule>>` method
+- [x] Implement `list_for_device(device_id) -> Result<Vec<Schedule>>` method
 - [ ] Implement `invalidate(id: Uuid) -> Result<()>` method
 - [ ] Add integration tests
 
@@ -476,39 +502,39 @@
 ## 📋 PHASE 4: HARDWARE ABSTRACTION - SIMULATED
 
 ### Simulated Battery Implementation
-- [ ] Create `src/hardware/simulated/mod.rs`
-- [ ] Create `src/hardware/simulated/battery.rs`
-- [ ] Create `SimulatedBattery` struct with internal state
-- [ ] Implement `Battery` trait for `SimulatedBattery`
-- [ ] Implement `read_state()` - return current simulated state
-- [ ] Implement `set_power()` - update simulated power
-- [ ] Add internal state update logic (SoC changes over time)
+- [x] Create `src/hardware/simulated/mod.rs`
+- [x] Create `src/hardware/simulated/battery.rs`
+- [x] Create `SimulatedBattery` struct with internal state
+- [x] Implement `Battery` trait for `SimulatedBattery`
+- [x] Implement `read_state()` - return current simulated state
+- [x] Implement `set_power()` - update simulated power
+- [x] Add internal state update logic (SoC changes over time)
 - [ ] Add temperature simulation (rises during charge/discharge)
-- [ ] Add efficiency simulation (losses during power conversion)
+- [x] Add efficiency simulation (losses during power conversion)
 - [ ] Add degradation simulation (health decreases with cycles)
 - [ ] Add realistic delays (Modbus response time simulation)
 - [ ] Add random noise to readings (realistic sensor variation)
 - [ ] Implement configurable simulation parameters
-- [ ] Add unit tests for state transitions
+- [x] Add unit tests for state transitions
 - [ ] Add property-based tests (proptest) for invariants
-- [ ] Document simulation assumptions
+- [x] Document simulation assumptions
 
 ### Simulated Inverter Implementation
-- [ ] Create `src/hardware/simulated/inverter.rs`
-- [ ] Create `SimulatedInverter` struct
-- [ ] Implement `Inverter` trait
-- [ ] Add AC/DC conversion simulation
-- [ ] Add efficiency curve simulation
+- [x] Create `src/hardware/simulated/inverter.rs`
+- [x] Create `SimulatedInverter` struct
+- [x] Implement `Inverter` trait
+- [x] Add AC/DC conversion simulation
+- [x] Add efficiency curve simulation
 - [ ] Add temperature simulation
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Simulated EV Charger Implementation
-- [ ] Create `src/hardware/simulated/ev_charger.rs`
-- [ ] Create `SimulatedEvCharger` struct
-- [ ] Implement `EvCharger` trait
+- [x] Create `src/hardware/simulated/ev_charger.rs`
+- [x] Create `SimulatedEvCharger` struct
+- [x] Implement `EvCharger` trait
 - [ ] Add vehicle connection/disconnection simulation
 - [ ] Add charge curve simulation (CC/CV phases)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Simulation Time Control
 - [ ] Create `src/hardware/simulated/time.rs`
@@ -519,14 +545,14 @@
 - [ ] Add integration tests with simulation clock
 
 ### Hardware Factory Pattern
-- [ ] Create `src/hardware/factory.rs`
-- [ ] Create `HardwareFactory` trait
-- [ ] Implement `create_battery() -> Arc<dyn Battery>` method
-- [ ] Implement `create_inverter() -> Arc<dyn Inverter>` method
-- [ ] Implement `create_ev_charger() -> Arc<dyn EvCharger>` method
-- [ ] Create `SimulatedHardwareFactory` implementation
-- [ ] Add configuration-driven factory selection
-- [ ] Add unit tests for factory pattern
+- [x] Create `src/hardware/factory.rs`
+- [x] Create `HardwareFactory` trait
+- [x] Implement `create_battery() -> Arc<dyn Battery>` method
+- [x] Implement `create_inverter() -> Arc<dyn Inverter>` method
+- [x] Implement `create_ev_charger() -> Arc<dyn EvCharger>` method
+- [x] Create `SimulatedHardwareFactory` implementation
+- [x] Add configuration-driven factory selection
+- [x] Add unit tests for factory pattern
 
 ---
 
@@ -556,13 +582,13 @@
 - [ ] Document all config options in README
 
 ### Configuration Files
-- [ ] Create complete `config/development.toml`
-- [ ] Create complete `config/production.toml`
+- [x] Create complete `config/development.toml`
+- [x] Create complete `config/production.toml`
 - [ ] Create complete `config/test.toml`
-- [ ] Add inline comments explaining each option
-- [ ] Add example values
-- [ ] Create `.env.example` with all environment variables
-- [ ] Document environment variable naming convention
+- [x] Add inline comments explaining each option
+- [x] Add example values
+- [x] Create `.env.example` with all environment variables
+- [x] Document environment variable naming convention
 
 ---
 
@@ -584,7 +610,7 @@
 - [ ] Add metrics for Modbus operations (success/failure counts)
 - [ ] Add tracing spans for debugging
 - [ ] Implement `Drop` for graceful disconnection
-- [ ] Add unit tests with mock Modbus server
+- [x] Add unit tests with mock Modbus server
 
 ### Modbus Register Mapping
 - [ ] Create `src/modbus/register_map.rs`
@@ -598,7 +624,7 @@
 - [ ] Create `SolarEdgeRegisterMap` (another example vendor)
 - [ ] Create `GenericBatteryRegisterMap` (fallback)
 - [ ] Add register map auto-detection logic
-- [ ] Add unit tests for register parsing
+- [x] Add unit tests for register parsing
 - [ ] Document register mappings in `docs/modbus_registers.md`
 
 ### Modbus Data Parsing
@@ -609,7 +635,7 @@
 - [ ] Implement `parse_f32(registers) -> f32` function
 - [ ] Implement `parse_scaled_value(registers, scale) -> f64` function
 - [ ] Add error handling for invalid data
-- [ ] Add unit tests with example data
+- [x] Add unit tests with example data
 
 ### Modbus Mock Server (for testing)
 - [ ] Create `tests/modbus_mock_server.rs`
@@ -652,7 +678,7 @@
 ### Modbus Inverter Implementation
 - [ ] Create `src/hardware/modbus/inverter.rs`
 - [ ] Create `ModbusInverter` struct
-- [ ] Implement `Inverter` trait
+- [x] Implement `Inverter` trait
 - [ ] Implement register reads for AC/DC power, efficiency, temperature
 - [ ] Implement mode setting via Modbus writes
 - [ ] Add error handling
@@ -675,7 +701,7 @@
 - [ ] Implement device creation with auto-detection
 - [ ] Add fallback to generic implementation
 - [ ] Add configuration for manual device selection
-- [ ] Add unit tests for factory logic
+- [x] Add unit tests for factory logic
 
 ---
 
@@ -768,7 +794,7 @@
 - [ ] Implement hourly price distribution analysis
 - [ ] Implement seasonal adjustment (summer vs winter)
 - [ ] Calculate statistical confidence intervals
-- [ ] Add unit tests with synthetic data
+- [x] Add unit tests with synthetic data
 
 ### Price Forecasting - Simple ML Model (MVP)
 - [ ] Create `src/forecast/price/simple_model.rs`
@@ -779,7 +805,7 @@
 - [ ] Implement confidence bounds
 - [ ] Add training on historical data
 - [ ] Add validation metrics (MAE, RMSE)
-- [ ] Add unit tests
+- [x] Add unit tests
 - [ ] Compare against Nordpool day-ahead prices
 
 ### Consumption Forecasting - Historical Analysis
@@ -792,7 +818,7 @@
 - [ ] Calculate average hourly consumption
 - [ ] Add rolling window analysis (last 7 days)
 - [ ] Add outlier detection and removal
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Consumption Forecasting - Feature Engineering
 - [ ] Create `src/forecast/consumption/features.rs`
@@ -804,7 +830,7 @@
 - [ ] Extract holiday feature (Swedish holidays)
 - [ ] Create feature vector struct
 - [ ] Add normalization/scaling
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Production Forecasting - Solar Simulation
 - [ ] Create `src/forecast/production/mod.rs`
@@ -816,7 +842,7 @@
 - [ ] Add cloud cover adjustment (from weather API)
 - [ ] Add seasonal efficiency adjustment
 - [ ] Add soiling/degradation factors
-- [ ] Add unit tests with known locations
+- [x] Add unit tests with known locations
 
 ### Weather API Integration
 - [ ] Create `src/forecast/weather/mod.rs`
@@ -841,7 +867,7 @@
 - [ ] Add forecast caching in database
 - [ ] Add periodic refresh (every hour)
 - [ ] Add telemetry for forecast quality
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Forecast Metrics & Evaluation
 - [ ] Create `src/forecast/metrics.rs`
@@ -851,7 +877,7 @@
 - [ ] Implement prediction intervals
 - [ ] Store forecast accuracy metrics in database
 - [ ] Create dashboard view of forecast performance
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ---
 
@@ -869,7 +895,7 @@
 - [ ] Add `max_grid_export: Power` field
 - [ ] Add `must_have_energy_at: Vec<(DateTime, Energy)>` (e.g., backup power)
 - [ ] Add validation methods
-- [ ] Add unit tests for constraint checking
+- [x] Add unit tests for constraint checking
 
 ### State Space Definition
 - [ ] Create `src/optimizer/state.rs`
@@ -880,7 +906,7 @@
 - [ ] Add `grid_price: Price` field
 - [ ] Implement state transitions
 - [ ] Implement state validation
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Action Space Definition
 - [ ] Create `src/optimizer/action.rs`
@@ -888,7 +914,7 @@
 - [ ] Create `ActionWithPower` struct (action + power level)
 - [ ] Implement action validation against constraints
 - [ ] Implement cost calculation for actions
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Optimization Strategy Trait
 - [ ] Create `src/optimizer/strategies/mod.rs`
@@ -908,7 +934,7 @@
 - [ ] Implement degradation cost modeling
 - [ ] Implement backtracking to extract optimal schedule
 - [ ] Add early stopping if optimal solution found
-- [ ] Add unit tests with simple scenarios
+- [x] Add unit tests with simple scenarios
 - [ ] Add integration tests with realistic forecasts
 - [ ] Add benchmarks (should run <1 second for 24h horizon)
 
@@ -918,7 +944,7 @@
 - [ ] Implement simple rule: charge when price < threshold, discharge when price > threshold
 - [ ] Implement SoC-aware charging (charge more when low)
 - [ ] Implement constraint checking
-- [ ] Add unit tests
+- [x] Add unit tests
 - [ ] Use as baseline to compare against DP
 
 ### Optimizer Service
@@ -931,7 +957,7 @@
 - [ ] Add logging of optimization results
 - [ ] Add metrics (optimization time, cost savings estimate)
 - [ ] Add error handling and fallback to safe schedule
-- [ ] Add unit tests
+- [x] Add unit tests
 - [ ] Add integration tests
 
 ### Optimization Metrics
@@ -941,7 +967,7 @@
 - [ ] Calculate degradation estimate
 - [ ] Calculate grid stress factor
 - [ ] Store metrics in database
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ---
 
@@ -953,7 +979,7 @@
 - [ ] Implement `calculate(target, current, dt) -> f64` method
 - [ ] Implement integral windup protection
 - [ ] Implement derivative kick protection
-- [ ] Add unit tests with step responses
+- [x] Add unit tests with step responses
 - [ ] Add tuning documentation
 
 ### Battery Controller Core
@@ -964,7 +990,7 @@
 - [ ] Add PID controller instance
 - [ ] Implement constructor with dependency injection
 - [ ] Add configuration (control loop interval, PID gains)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Main Control Loop
 - [ ] Implement `run() -> Result<()>` method in BatteryController
@@ -991,7 +1017,7 @@
 - [ ] Log optimization event
 - [ ] Add metrics
 - [ ] Add error handling (keep old schedule on failure)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Periodic Tasks Manager
 - [ ] Create `src/controller/scheduler.rs`
@@ -1013,7 +1039,7 @@
 - [ ] Implement emergency shutdown procedure
 - [ ] Add safety event logging
 - [ ] Add alerts/notifications
-- [ ] Add unit tests for each safety check
+- [x] Add unit tests for each safety check
 
 ### Controller Telemetry
 - [ ] Add metrics for control loop execution time
@@ -1044,7 +1070,7 @@
 - [ ] Add forecaster reference field
 - [ ] Add configuration field
 - [ ] Implement `Clone` for `AppState` (wrapped in Arc)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Error Handling
 - [ ] Create `ApiError` enum in `src/api/error.rs`
@@ -1054,7 +1080,7 @@
 - [ ] Implement `From<anyhow::Error>` for `ApiError`
 - [ ] Add error logging with tracing
 - [ ] Add error metrics
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Response Wrapper
 - [ ] Create `ApiResponse<T>` struct in `src/api/response.rs`
@@ -1064,7 +1090,7 @@
 - [ ] Add `timestamp: DateTime` field
 - [ ] Implement `IntoResponse` for `ApiResponse<T>`
 - [ ] Add builder pattern for responses
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Health Check Endpoint
 - [ ] Create `src/api/handlers/health.rs`
@@ -1104,6 +1130,26 @@
 - [ ] Add pagination for history endpoint
 - [ ] Add OpenAPI documentation
 - [ ] Add integration tests
+
+### EV Charger Endpoints
+- [x] Create `src/api/handlers/ev_charger.rs`
+- [x] Implement `GET /api/v1/ev-charger/state` handler
+- [x] Implement `POST /api/v1/ev-charger/set-current` handler
+- [x] Implement `POST /api/v1/ev-charger/start` handler
+- [x] Implement `POST /api/v1/ev-charger/stop` handler
+- [x] Implement `GET /api/v1/ev-charger/sessions` handler
+- [x] Integrate EV charger endpoints with auth layer
+- [x] Add OpenAPI documentation for EV charger endpoints
+
+### Inverter Endpoints
+- [x] Create `src/api/handlers/inverter.rs`
+- [x] Implement `GET /api/v1/inverter/state` handler
+- [x] Implement `POST /api/v1/inverter/mode` handler
+- [x] Implement `POST /api/v1/inverter/export-limit` handler
+- [x] Implement `GET /api/v1/inverter/production` handler
+- [x] Implement `GET /api/v1/inverter/efficiency` handler
+- [x] Integrate inverter endpoints with auth layer
+- [x] Add OpenAPI documentation for inverter endpoints
 
 ### Schedule Endpoints
 - [ ] Create `src/api/handlers/schedule.rs`
@@ -1217,7 +1263,7 @@
 - [ ] Configure log levels per module
 - [ ] Add file appender for log persistence
 - [ ] Add log rotation
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Metrics Collection
 - [ ] Create `src/telemetry/metrics.rs`
@@ -1266,7 +1312,7 @@
 - [ ] Implement `verify_power_balance()` method
 - [ ] Implement `exceeds_fuse_limit()` method
 - [ ] Implement `net_grid_kw()` method
-- [ ] Add unit tests for power balance verification
+- [x] Add unit tests for power balance verification
 - [ ] Add `Display` implementation for debugging
 
 ### Constraint System
@@ -1295,7 +1341,7 @@
 - [ ] Add `ev_target_soc_percent` optional field
 - [ ] Create `AllConstraints` wrapper struct
 - [ ] Add validation for constraints
-- [ ] Add unit tests for constraint types
+- [x] Add unit tests for constraint types
 
 ### Power Flow Input State
 - [ ] Create `src/power_flow/inputs.rs`
@@ -1308,7 +1354,7 @@
 - [ ] Add `grid_price` field
 - [ ] Add `timestamp` field
 - [ ] Add validation methods
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### EV State Modeling
 - [ ] Create `src/domain/ev_charger/ev_state.rs`
@@ -1323,7 +1369,7 @@
 - [ ] Implement `needs_charging()` method
 - [ ] Implement `time_until_departure()` method
 - [ ] Implement `energy_needed_kwh()` method
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Power Flow Computation Algorithm
 - [ ] Create `src/power_flow/model.rs`
@@ -1388,7 +1434,7 @@
 - [ ] Add seasonal variation (winter vs summer)
 - [ ] Add random spikes (dishwasher, dryer, etc.)
 - [ ] Add configurable appliances (EV, heat pump, etc.)
-- [ ] Add unit tests with known profiles
+- [x] Add unit tests with known profiles
 - [ ] Add visualization of daily profile
 
 ### Simulated Solar PV
@@ -1406,7 +1452,7 @@
 - [ ] Implement `get_production_at(time) -> f64` method
 - [ ] Add temperature derating (panels less efficient when hot)
 - [ ] Add soiling factor (dirt on panels)
-- [ ] Add unit tests with known solar data
+- [x] Add unit tests with known solar data
 - [ ] Add visualization of daily production
 
 ### Simulated EV Battery
@@ -1428,8 +1474,8 @@
 - [ ] Add charging curve simulation (CC/CV phases)
 - [ ] Add battery temperature simulation
 - [ ] Add battery degradation tracking
-- [ ] Add unit tests for charge/discharge
-- [ ] Add unit tests for driving
+- [x] Add unit tests for charge/discharge
+- [x] Add unit tests for driving
 
 ### Simulated EVSE (Charger)
 - [ ] Create `src/simulation/evse.rs`
@@ -1446,8 +1492,8 @@
 - [ ] Implement `disconnect_ev()` method
 - [ ] Add current ramp-up/ramp-down simulation (not instant)
 - [ ] Add EVSE ready state (not ready until pilot signal)
-- [ ] Add unit tests for current setting
-- [ ] Add unit tests for power calculation
+- [x] Add unit tests for current setting
+- [x] Add unit tests for power calculation
 
 ### Simulated Grid
 - [ ] Create `src/simulation/grid.rs`
@@ -1465,8 +1511,8 @@
 - [ ] Simulate fuse trip if exceeded for >5 seconds
 - [ ] Add voltage variation simulation (±10%)
 - [ ] Add frequency variation (50Hz ±0.2Hz)
-- [ ] Add unit tests for price simulation
-- [ ] Add unit tests for fuse protection
+- [x] Add unit tests for price simulation
+- [x] Add unit tests for fuse protection
 
 ### Simulation Time Controller
 - [ ] Create `src/simulation/time.rs`
@@ -1482,7 +1528,7 @@
 - [ ] Add real-time mode (acceleration = 1)
 - [ ] Add fast-forward mode (acceleration = 1440)
 - [ ] Add step-by-step mode (pause between steps)
-- [ ] Add unit tests for time advancement
+- [x] Add unit tests for time advancement
 
 ### Complete Simulation Environment
 - [ ] Create `src/simulation/environment.rs`
@@ -1551,7 +1597,7 @@
 - [ ] Add PID control for smooth battery power
 - [ ] Add current ramping for EVSE
 - [ ] Prevent oscillations
-- [ ] Add unit tests for ramping
+- [x] Add unit tests for ramping
 
 ### Safety Monitors
 - [ ] Create `src/controller/safety_monitor.rs`
@@ -1566,7 +1612,7 @@
 - [ ] Monitor phase imbalance (3-phase systems)
 - [ ] Add safety event logging
 - [ ] Add alerts/notifications
-- [ ] Add unit tests for each safety check
+- [x] Add unit tests for each safety check
 
 ### Power Flow Metrics
 - [ ] Add metric: `power_flow_pv_kw` gauge
@@ -1612,7 +1658,7 @@
 - [ ] Implement message ID tracking
 - [ ] Add connection keep-alive (heartbeat)
 - [ ] Add reconnection logic
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### OCPP Message Types
 - [ ] Create `src/ocpp/messages/mod.rs`
@@ -1629,7 +1675,7 @@
 - [ ] Implement `GetConfiguration` message
 - [ ] Implement `MeterValues` message
 - [ ] Add serde serialization/deserialization
-- [ ] Add unit tests for message parsing
+- [x] Add unit tests for message parsing
 
 ### OCPP Charger Interface
 - [ ] Update `EvCharger` trait with OCPP-specific methods
@@ -1641,7 +1687,7 @@
 ### OCPP EV Charger Implementation
 - [ ] Create `src/hardware/ocpp/ev_charger.rs`
 - [ ] Create `OcppEvCharger` struct
-- [ ] Implement `EvCharger` trait
+- [x] Implement `EvCharger` trait
 - [ ] Implement state synchronization from `StatusNotification`
 - [ ] Implement meter values from `MeterValues` messages
 - [ ] Implement charging control via `RemoteStart/StopTransaction`
@@ -1657,7 +1703,7 @@
 - [ ] Implement handler for `StartTransaction`
 - [ ] Implement handler for `StopTransaction`
 - [ ] Route messages to appropriate handlers
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### OCPP Configuration
 - [ ] Add OCPP configuration to `AppConfig`
@@ -1693,7 +1739,7 @@
 - [ ] Add `get_v2x_capabilities() -> Result<V2XCapabilities>` method
 - [ ] Update `ChargerState` with discharge information
 - [ ] Create `V2XSession` struct
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### V2X Controller
 - [ ] Create `src/controller/v2x_controller.rs`
@@ -1711,7 +1757,7 @@
 - [ ] Add vehicle availability schedule (user inputs when car is home)
 - [ ] Add constraints for minimum vehicle SoC
 - [ ] Add separate degradation model for vehicle battery
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### V2X API Endpoints
 - [ ] Create `src/api/handlers/v2x.rs`
@@ -1744,7 +1790,7 @@
 - [ ] Implement label extraction (actual consumption/production)
 - [ ] Store training data in database
 - [ ] Add data quality checks
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Feature Engineering
 - [ ] Create `src/ml/features/mod.rs`
@@ -1764,7 +1810,7 @@
 - [ ] Extract consumption trends
 - [ ] Create feature normalization (StandardScaler)
 - [ ] Create feature vector struct
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Dataset Management
 - [ ] Create `src/ml/data/dataset.rs`
@@ -1773,7 +1819,7 @@
 - [ ] Implement cross-validation splits
 - [ ] Implement data augmentation (synthetic scenarios)
 - [ ] Implement batch loading from database
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Data Export for Training
 - [ ] Create `src/ml/data/export.rs`
@@ -1782,7 +1828,7 @@
 - [ ] Add CLI command: `cargo run --bin export-training-data`
 - [ ] Add compression
 - [ ] Add metadata (feature names, statistics)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ---
 
@@ -1799,7 +1845,7 @@
 - [ ] Train on historical consumption data
 - [ ] Evaluate with MAE, RMSE, MAPE
 - [ ] Compare against simple moving average
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### XGBoost Model (Gradient Boosting)
 - [ ] Create `src/ml/models/xgboost.rs`
@@ -1809,7 +1855,7 @@
 - [ ] Implement hyperparameter tuning (grid search)
 - [ ] Evaluate model performance
 - [ ] Add feature importance analysis
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### LSTM Model (Deep Learning) - Optional
 - [ ] Create `src/ml/models/lstm.rs`
@@ -1819,7 +1865,7 @@
 - [ ] Implement early stopping
 - [ ] Evaluate model performance
 - [ ] Export trained model
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Model Training Pipeline
 - [ ] Create `src/ml/training/mod.rs`
@@ -1831,7 +1877,7 @@
 - [ ] Implement model checkpointing
 - [ ] Add training metrics logging
 - [ ] Add CLI command: `cargo run --bin train-model consumption`
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Model Evaluation
 - [ ] Create `src/ml/training/evaluator.rs`
@@ -1840,7 +1886,7 @@
 - [ ] Generate prediction vs actual plots
 - [ ] Generate residual plots
 - [ ] Generate feature importance plots
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Model Persistence
 - [ ] Create `src/ml/models/persistence.rs`
@@ -1849,7 +1895,7 @@
 - [ ] Add model versioning
 - [ ] Add model metadata (training date, features, metrics)
 - [ ] Store models in `models/` directory
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ---
 
@@ -1861,7 +1907,7 @@
 - [ ] Use multi-step forecasting (predict 24h ahead)
 - [ ] Implement training loop
 - [ ] Evaluate against Nordpool day-ahead prices
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Prophet Model (Facebook)
 - [ ] Research Prophet library (may need Python bridge)
@@ -1869,14 +1915,14 @@
 - [ ] Implement seasonal decomposition
 - [ ] Implement trend forecasting
 - [ ] Evaluate model performance
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Ensemble Model
 - [ ] Create `src/ml/models/ensemble_price.rs`
 - [ ] Combine multiple price forecasting models
 - [ ] Implement weighted averaging
 - [ ] Implement model selection based on recent performance
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Model Training Pipeline for Price
 - [ ] Add CLI command: `cargo run --bin train-model price`
@@ -1894,7 +1940,7 @@
 - [ ] Use cloud cover, temperature, solar angle
 - [ ] Train on historical production data
 - [ ] Evaluate model performance
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Model Training Pipeline for Production
 - [ ] Add CLI command: `cargo run --bin train-model production`
@@ -1914,7 +1960,7 @@
 - [ ] Implement inference pipeline
 - [ ] Add model warm-up
 - [ ] Add batch inference support
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### ML-Powered Forecaster
 - [ ] Create `src/ml/inference/forecaster.rs`
@@ -1925,7 +1971,7 @@
 - [ ] Implement inference for 24h forecast
 - [ ] Add fallback to simple models on error
 - [ ] Add inference metrics (latency, accuracy)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Integration with Forecast Service
 - [ ] Update `ForecastAggregator` to use ML models
@@ -1933,7 +1979,7 @@
 - [ ] Implement model selection (ML vs simple)
 - [ ] Add A/B testing framework
 - [ ] Add online learning (periodic retraining)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Model Monitoring
 - [ ] Create `src/ml/monitoring/mod.rs`
@@ -1941,7 +1987,7 @@
 - [ ] Detect model drift
 - [ ] Alert when accuracy degrades
 - [ ] Add automatic retraining trigger
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ---
 
@@ -1955,7 +2001,7 @@
 - [ ] Add binary variables for on/off states
 - [ ] Add constraint modeling
 - [ ] Compare performance vs DP
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Stochastic Optimization
 - [ ] Create `src/optimizer/strategies/stochastic.rs`
@@ -1963,7 +2009,7 @@
 - [ ] Incorporate forecast uncertainty
 - [ ] Generate scenario tree
 - [ ] Implement scenario-based optimization
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Model Predictive Control (MPC)
 - [ ] Create `src/optimizer/strategies/mpc.rs`
@@ -1971,7 +2017,7 @@
 - [ ] Implement receding horizon optimization
 - [ ] Update optimization every hour with new measurements
 - [ ] Add disturbance rejection
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Reinforcement Learning Optimizer (Advanced)
 - [ ] Create `src/ml/rl/mod.rs`
@@ -1982,7 +2028,7 @@
 - [ ] Implement training environment
 - [ ] Train agent on simulated scenarios
 - [ ] Implement policy inference
-- [ ] Add unit tests
+- [x] Add unit tests
 - [ ] Compare against DP/MILP
 
 ---
@@ -2247,14 +2293,14 @@
 - [ ] Add household management endpoints
 - [ ] Add user-to-household associations
 - [ ] Add access control (users can only see their household)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Time-of-Use Tariff Support
 - [ ] Model complex tariffs (peak, off-peak, super-off-peak)
 - [ ] Integrate with Swedish grid operators
 - [ ] Update optimizer to consider tariff structure
 - [ ] Add tariff configuration endpoint
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Grid Services (Frequency Response)
 - [ ] Research grid frequency regulation requirements
@@ -2262,7 +2308,7 @@
 - [ ] Implement automatic response to frequency deviations
 - [ ] Add safety limits
 - [ ] Add opt-in configuration
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Battery Degradation Modeling
 - [ ] Implement cycle counting (rainflow algorithm)
@@ -2270,21 +2316,21 @@
 - [ ] Model resistance increase over time
 - [ ] Update health percentage calculation
 - [ ] Integrate with optimizer (minimize degradation)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Solar Forecasting Improvements
 - [ ] Integrate with additional weather APIs
 - [ ] Implement satellite-based cloud forecasting
 - [ ] Implement machine learning for solar production
 - [ ] Compare forecast accuracy
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Demand Response Programs
 - [ ] Research Swedish demand response programs
 - [ ] Implement API for demand response signals
 - [ ] Update optimizer to respond to DR events
 - [ ] Add user opt-in configuration
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ---
 
