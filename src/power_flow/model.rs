@@ -211,7 +211,10 @@ impl PowerFlowModel {
         let low_soc_threshold = max_soc * BATTERY_LOW_SOC_MULTIPLIER;
 
         if inputs.grid_price_sek_kwh < cheap_grid_threshold && soc < low_soc_threshold {
-            let charge_kw = self.constraints.physical.max_battery_charge_kw * 0.5;
+            // CRITICAL FIX: Use configurable charge rate instead of magic number 0.5
+            // This allows tuning based on fuse capacity and user preferences
+            let charge_rate = self.constraints.economic.low_price_charge_rate.clamp(0.1, 1.0);
+            let charge_kw = self.constraints.physical.max_battery_charge_kw * charge_rate;
             return (charge_kw, available_pv_kw);
         }
 

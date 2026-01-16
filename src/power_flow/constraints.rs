@@ -100,6 +100,11 @@ pub struct EconomicObjectives {
 
     /// EV target SoC (%) at departure time
     pub ev_target_soc_percent: Option<f64>,
+
+    /// Low price charge rate (fraction of max charge power, 0.1-1.0)
+    /// Used when grid price is cheap but battery isn't full
+    /// Default: 0.5 (50% of max charge rate)
+    pub low_price_charge_rate: f64,
 }
 
 impl Default for EconomicObjectives {
@@ -111,6 +116,7 @@ impl Default for EconomicObjectives {
             arbitrage_threshold_sek_kwh: 2.0,
             ev_departure_time: None,
             ev_target_soc_percent: None,
+            low_price_charge_rate: 0.5,
         }
     }
 }
@@ -197,6 +203,9 @@ impl AllConstraints {
         }
         if !self.economic.arbitrage_threshold_sek_kwh.is_finite() {
             return Err(format!("arbitrage_threshold_sek_kwh is not finite: {}", self.economic.arbitrage_threshold_sek_kwh));
+        }
+        if !self.economic.low_price_charge_rate.is_finite() {
+            return Err(format!("low_price_charge_rate is not finite: {}", self.economic.low_price_charge_rate));
         }
 
         // Now check physical constraints ranges

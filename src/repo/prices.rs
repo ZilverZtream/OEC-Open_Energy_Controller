@@ -65,6 +65,7 @@ impl PriceRepository {
                 time_start: row.timestamp.into(),
                 time_end: (row.timestamp + chrono::Duration::hours(1)).into(),
                 price_sek_per_kwh: row.price_sek_per_kwh,
+                export_price_sek_per_kwh: None, // Use default (40% of import price)
             })
             .collect();
 
@@ -90,6 +91,7 @@ impl PriceRepository {
             time_start: r.timestamp.into(),
             time_end: (r.timestamp + chrono::Duration::hours(1)).into(),
             price_sek_per_kwh: r.price_sek_per_kwh,
+            export_price_sek_per_kwh: None, // Use default (40% of import price)
         }))
     }
 

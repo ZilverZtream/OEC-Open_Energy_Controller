@@ -124,7 +124,10 @@ pub mod client {
             F: Fn(&mut tokio_modbus::client::Context) -> Fut,
             Fut: std::future::Future<Output = std::result::Result<T, std::io::Error>>,
         {
-            for attempt in 1..=MAX_RETRIES {
+            // Ensure we always attempt at least once, even if MAX_RETRIES is 0
+            let max_attempts = MAX_RETRIES.max(1);
+
+            for attempt in 1..=max_attempts {
                 let mut ctx = self.context.lock().await;
 
                 match timeout(self.timeout_duration, operation(&mut *ctx)).await {
@@ -136,14 +139,14 @@ pub mod client {
                     }
                     Ok(Err(e)) => {
                         warn!("Modbus operation failed (attempt {}): {}", attempt, e);
-                        if attempt == MAX_RETRIES {
-                            return Err(anyhow::anyhow!("Operation failed after {} attempts: {}", MAX_RETRIES, e));
+                        if attempt == max_attempts {
+                            return Err(anyhow::anyhow!("Operation failed after {} attempts: {}", max_attempts, e));
                         }
                     }
                     Err(_) => {
                         warn!("Modbus operation timeout (attempt {})", attempt);
-                        if attempt == MAX_RETRIES {
-                            return Err(anyhow::anyhow!("Operation timeout after {} attempts", MAX_RETRIES));
+                        if attempt == max_attempts {
+                            return Err(anyhow::anyhow!("Operation timeout after {} attempts", max_attempts));
                         }
                     }
                 }
@@ -153,6 +156,7 @@ pub mod client {
                 tokio::time::sleep(Duration::from_millis(100 * attempt as u64)).await;
             }
 
+            // This should never be reached since we always return within the loop
             unreachable!("Retry loop should always return or error")
         }
     }

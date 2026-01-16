@@ -466,7 +466,22 @@ impl std::str::FromStr for PriceArea {
 pub struct PricePoint {
     pub time_start: DateTime<Utc>,
     pub time_end: DateTime<Utc>,
+    /// Import price (buying from grid) in SEK/kWh
     pub price_sek_per_kwh: f64,
+    /// Export price (selling to grid) in SEK/kWh
+    /// Typically lower than import price due to grid fees and taxes
+    /// Defaults to 40% of import price if not specified
+    #[serde(default)]
+    pub export_price_sek_per_kwh: Option<f64>,
+}
+
+impl PricePoint {
+    /// Get the export price, using default if not specified
+    /// Default: 40% of import price (typical for Nordic markets)
+    pub fn export_price(&self) -> f64 {
+        self.export_price_sek_per_kwh
+            .unwrap_or(self.price_sek_per_kwh * 0.4)
+    }
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]

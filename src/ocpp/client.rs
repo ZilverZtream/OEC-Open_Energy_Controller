@@ -7,6 +7,7 @@
 
 use super::messages::*;
 use anyhow::Result;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -15,6 +16,9 @@ pub struct OcppWebSocketClient {
     endpoint_url: String,
     charge_point_id: String,
     heartbeat_interval: Arc<RwLock<Option<i32>>>,
+    /// Track active transaction IDs to properly validate RemoteStopTransaction
+    /// A real charger rejects stop requests if no transaction is active
+    active_transactions: Arc<RwLock<HashSet<i32>>>,
 }
 
 impl OcppWebSocketClient {
@@ -24,6 +28,7 @@ impl OcppWebSocketClient {
             endpoint_url,
             charge_point_id,
             heartbeat_interval: Arc::new(RwLock::new(None)),
+            active_transactions: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -79,6 +84,22 @@ impl OcppWebSocketClient {
             request.id_tag
         );
 
+        // Generate a transaction ID (in real implementation, this would be sequential)
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hash, Hasher};
+        let mut hasher = RandomState::new().build_hasher();
+        request.id_tag.hash(&mut hasher);
+        let transaction_id = (hasher.finish() % 100000) as i32;
+
+        // Track the transaction
+        self.active_transactions.write().await.insert(transaction_id);
+
+        tracing::info!(
+            "Started transaction {} for ID tag {}",
+            transaction_id,
+            request.id_tag
+        );
+
         Ok(RemoteStartTransactionResponse {
             status: RemoteStartStopStatus::Accepted,
         })
@@ -89,9 +110,25 @@ impl OcppWebSocketClient {
         &self,
         request: RemoteStopTransactionRequest,
     ) -> Result<RemoteStopTransactionResponse> {
-        // TODO: Implement actual transaction stop logic
+        // CRITICAL FIX: A real charger rejects stop if no transaction is active
+        // This prevents state desynchronization with the controlling system
+        let mut transactions = self.active_transactions.write().await;
+
+        if !transactions.contains(&request.transaction_id) {
+            tracing::warn!(
+                "Rejecting remote stop for transaction ID {}: no such active transaction",
+                request.transaction_id
+            );
+            return Ok(RemoteStopTransactionResponse {
+                status: RemoteStartStopStatus::Rejected,
+            });
+        }
+
+        // Remove the transaction from active set
+        transactions.remove(&request.transaction_id);
+
         tracing::info!(
-            "Handling remote stop for transaction ID: {}",
+            "Stopped transaction ID: {}",
             request.transaction_id
         );
 

@@ -157,25 +157,40 @@ pub struct SimulatedBattery {
     pub simulate_delays: bool,
     /// Enable random noise in sensor readings (realistic sensor variation)
     pub simulate_noise: bool,
+    /// Ambient temperature (°C) - configurable based on installation environment
+    /// Nordic winter: -10°C, Summer: 20°C, Indoor: 15-25°C
+    pub ambient_temp_c: f64,
 }
 
 impl SimulatedBattery {
     pub fn new(initial: BatteryState, caps: BatteryCapabilities) -> Self {
+        Self::new_with_ambient(initial, caps, 25.0) // Default 25°C for backwards compatibility
+    }
+
+    /// Create a new simulated battery with configurable ambient temperature
+    pub fn new_with_ambient(initial: BatteryState, caps: BatteryCapabilities, ambient_temp_c: f64) -> Self {
         Self {
             state: Arc::new(RwLock::new(initial)),
             caps,
             simulate_delays: false,
             simulate_noise: false,
+            ambient_temp_c,
         }
     }
 
     /// Create a new simulated battery with realistic delays and noise enabled
     pub fn new_realistic(initial: BatteryState, caps: BatteryCapabilities) -> Self {
+        Self::new_realistic_with_ambient(initial, caps, 25.0) // Default 25°C for backwards compatibility
+    }
+
+    /// Create a new simulated battery with realistic delays, noise, and configurable ambient temperature
+    pub fn new_realistic_with_ambient(initial: BatteryState, caps: BatteryCapabilities, ambient_temp_c: f64) -> Self {
         Self {
             state: Arc::new(RwLock::new(initial)),
             caps,
             simulate_delays: true,
             simulate_noise: true,
+            ambient_temp_c,
         }
     }
 
@@ -269,14 +284,14 @@ impl Battery for SimulatedBattery {
         st.soc_percent = Self::clamp_soc(st.soc_percent + delta_pct);
 
         // Temperature simulation - rises during charging/discharging
-        // Base temperature is 25°C, increases with power and decreases when idle
-        const AMBIENT_TEMP: f64 = 25.0;
+        // CRITICAL FIX: Use configurable ambient temperature based on installation environment
+        // Nordic garage in winter might be -10°C, indoor might be 20°C
         const TEMP_RISE_PER_KW: f64 = 2.0; // °C per kW of power
         const COOLING_RATE: f64 = 0.5; // °C per time step when idle
         const MAX_SAFE_TEMP: f64 = 45.0; // Should match SafetyConstraints default
 
         let power_abs_kw = watts.abs() / 1000.0;
-        let target_temp = AMBIENT_TEMP + (power_abs_kw * TEMP_RISE_PER_KW);
+        let target_temp = self.ambient_temp_c + (power_abs_kw * TEMP_RISE_PER_KW);
 
         // Gradually approach target temperature
         if st.temperature_c < target_temp {

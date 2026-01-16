@@ -89,6 +89,7 @@ impl PriceForecaster for ElprisetJustNuPriceForecaster {
                 time_start: r.time_start,
                 time_end: r.time_end,
                 price_sek_per_kwh: r.sek_per_kwh,
+                export_price_sek_per_kwh: None, // Use default (40% of import price)
             })
             .collect::<Vec<_>>();
 
@@ -200,6 +201,7 @@ impl NordpoolPriceForecaster {
                                     time_start: row.start_time,
                                     time_end: row.end_time,
                                     price_sek_per_kwh,
+                                    export_price_sek_per_kwh: None, // Use default (40% of import price)
                                 });
                             }
                         }
