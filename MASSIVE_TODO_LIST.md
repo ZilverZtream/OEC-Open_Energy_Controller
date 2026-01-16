@@ -659,7 +659,7 @@
 - [x] Create `DeviceRepository` struct with `PgPool`
 - [x] Implement `insert_device(&Device) -> Result<Uuid>` method
 - [x] Implement `find_by_id(Uuid) -> Result<Option<Device>>` method
-- [ ] Implement `find_by_ip(IpAddr) -> Result<Option<Device>>` method
+- [x] Implement `find_by_ip(IpAddr) -> Result<Option<Device>>` method
 - [x] Implement `find_by_type(DeviceType) -> Result<Vec<Device>>` method
 - [x] Implement `update_last_seen(Uuid) -> Result<()>` method
 - [x] Implement `delete(Uuid) -> Result<()>` method
@@ -686,7 +686,7 @@
 - [x] Implement `find_active(device_id, timestamp) -> Result<Option<Schedule>>` method
 - [x] Implement `find_by_id(Uuid) -> Result<Option<Schedule>>` method
 - [x] Implement `list_for_device(device_id) -> Result<Vec<Schedule>>` method
-- [ ] Implement `invalidate(id: Uuid) -> Result<()>` method
+- [x] Implement `invalidate(id: Uuid) -> Result<()>` method
 - [ ] Add integration tests
 
 ### Repository Pattern - Price Repository
@@ -735,9 +735,9 @@
 - [x] Implement `read_state()` - return current simulated state
 - [x] Implement `set_power()` - update simulated power
 - [x] Add internal state update logic (SoC changes over time)
-- [ ] Add temperature simulation (rises during charge/discharge)
+- [x] Add temperature simulation (rises during charge/discharge)
 - [x] Add efficiency simulation (losses during power conversion)
-- [ ] Add degradation simulation (health decreases with cycles)
+- [x] Add degradation simulation (health decreases with cycles)
 - [ ] Add realistic delays (Modbus response time simulation)
 - [ ] Add random noise to readings (realistic sensor variation)
 - [ ] Implement configurable simulation parameters
@@ -758,7 +758,7 @@
 - [x] Create `src/hardware/simulated/ev_charger.rs`
 - [x] Create `SimulatedEvCharger` struct
 - [x] Implement `EvCharger` trait
-- [ ] Add vehicle connection/disconnection simulation
+- [x] Add vehicle connection/disconnection simulation
 - [ ] Add charge curve simulation (CC/CV phases)
 - [x] Add unit tests
 

@@ -160,6 +160,41 @@ impl Battery for SimulatedBattery {
         let delta_pct = (delta_kwh / cap_kwh) * 100.0;
         st.soc_percent = Self::clamp_soc(st.soc_percent + delta_pct);
 
+        // Temperature simulation - rises during charging/discharging
+        // Base temperature is 25°C, increases with power and decreases when idle
+        const AMBIENT_TEMP: f64 = 25.0;
+        const TEMP_RISE_PER_KW: f64 = 2.0; // °C per kW of power
+        const COOLING_RATE: f64 = 0.5; // °C per time step when idle
+
+        let power_abs_kw = watts.abs() / 1000.0;
+        let target_temp = AMBIENT_TEMP + (power_abs_kw * TEMP_RISE_PER_KW);
+
+        // Gradually approach target temperature
+        if st.temperature_c < target_temp {
+            st.temperature_c = (st.temperature_c + COOLING_RATE).min(target_temp);
+        } else {
+            st.temperature_c = (st.temperature_c - COOLING_RATE).max(target_temp);
+        }
+
+        // Clamp to reasonable range
+        st.temperature_c = st.temperature_c.clamp(0.0, 60.0);
+
+        // Degradation simulation - health decreases with cycles
+        // A cycle is a full charge or discharge (100% SoC change)
+        let soc_change_pct = delta_pct.abs();
+        let partial_cycle = soc_change_pct / 100.0;
+        let degradation = self.caps.degradation_per_cycle * partial_cycle;
+        st.health_percent = (st.health_percent - degradation).max(0.0);
+
+        // Update status based on power
+        st.status = if watts > 10.0 {
+            BatteryStatus::Charging
+        } else if watts < -10.0 {
+            BatteryStatus::Discharging
+        } else {
+            BatteryStatus::Idle
+        };
+
         Ok(())
     }
 

@@ -66,6 +66,22 @@ impl<'a> DeviceRepository<'a> {
         Ok(device)
     }
 
+    pub async fn find_by_ip(&self, ip: std::net::IpAddr) -> Result<Option<DeviceRow>> {
+        let device = sqlx::query_as!(
+            DeviceRow,
+            r#"
+            SELECT id, device_type, manufacturer, model, ip as "ip: _", port, modbus_unit_id, config, discovered_at, last_seen
+            FROM devices
+            WHERE ip = $1
+            "#,
+            ip
+        )
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(device)
+    }
+
     pub async fn find_by_type(&self, device_type: &str) -> Result<Vec<DeviceRow>> {
         let devices = sqlx::query_as!(
             DeviceRow,
