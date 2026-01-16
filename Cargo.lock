@@ -2906,6 +2906,7 @@ dependencies = [
  "chrono-tz",
  "criterion",
  "derive_more",
+ "dotenvy",
  "fake",
  "figment",
  "futures",

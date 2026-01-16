@@ -1,0 +1,44 @@
+# Prometheus configuration for Open Energy Controller
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'open-energy-controller'
+
+# Scrape configurations
+scrape_configs:
+  # Open Energy Controller metrics
+  - job_name: 'energy-controller'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          service: 'energy-controller'
+          environment: 'development'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # PostgreSQL metrics (if using postgres_exporter)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
+    # Uncomment when postgres_exporter is added to docker-compose
+
+# Alerting configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# Load rules
+# rule_files:
+#   - 'alerts/*.yml'
