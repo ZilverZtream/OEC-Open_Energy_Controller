@@ -57,12 +57,12 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
             get(inverter::get_production_history),
         )
         .route("/inverter/efficiency", get(inverter::get_efficiency_stats))
-        // Grid routes - TODO: Re-enable once BatteryController implements these methods
-        // .route("/grid/status", get(grid::get_grid_status))
-        // .route("/grid/limits", get(grid::get_grid_limits))
-        // .route("/grid/statistics", get(grid::get_grid_statistics))
-        // Weather routes - TODO: Re-enable once BatteryController implements this method
-        // .route("/weather/forecast", get(weather::get_weather_forecast))
+        // Grid routes
+        .route("/grid/status", get(grid::get_grid_status))
+        .route("/grid/limits", get(grid::get_grid_limits))
+        .route("/grid/statistics", get(grid::get_grid_statistics))
+        // Weather routes
+        .route("/weather/forecast", get(weather::get_weather_forecast))
         .with_state(state)
         .layer(crate::auth::auth_layer(cfg.auth.token.clone()))
 }

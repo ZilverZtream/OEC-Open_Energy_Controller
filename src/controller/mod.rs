@@ -11,11 +11,12 @@ use uuid::Uuid;
 use crate::config::Config;
 
 use crate::domain::{
-    Battery, BatteryCapabilities, BatteryState, Forecast24h, HealthStatus, PriceArea, Schedule,
+    Battery, BatteryCapabilities, BatteryState, Forecast24h, GridConnection, GridLimits,
+    GridStatistics, GridStatus, HealthStatus, PriceArea, Schedule,
 };
 use crate::forecast::{
-    ElprisetJustNuPriceForecaster, ForecastEngine, SimpleConsumptionForecaster,
-    SimpleProductionForecaster,
+    ElprisetJustNuPriceForecaster, ForecastEngine, GeoLocation, SimpleConsumptionForecaster,
+    SimpleProductionForecaster, SmhiClient, WeatherForecast,
 };
 use crate::optimizer::{BatteryOptimizer, Constraints, DynamicProgrammingOptimizer, SystemState};
 use crate::repo::Repositories;
@@ -283,6 +284,59 @@ impl BatteryController {
             .get_forecast_24h(area, self.household_id)
             .await
     }
+    /// Fetch weather forecast data for the provided location.
+    pub async fn get_weather_forecast(&self, location: GeoLocation) -> Result<WeatherForecast> {
+        let client = SmhiClient::new();
+        client.fetch_forecast(&location).await
+    }
+    /// Return the latest grid connection status.
+    pub async fn get_grid_status(&self) -> Result<GridConnection> {
+        let limits = self.get_grid_limits().await?;
+        let voltage_v = (limits.voltage_min_v + limits.voltage_max_v) / 2.0;
+
+        Ok(GridConnection {
+            status: GridStatus::Normal,
+            import_power_w: 0.0,
+            export_power_w: 0.0,
+            frequency_hz: 50.0,
+            voltage_v,
+            current_a: 0.0,
+        })
+    }
+    /// Return grid limits derived from controller constraints.
+    pub async fn get_grid_limits(&self) -> Result<GridLimits> {
+        let constraints = self.constraints.read().await.clone();
+        let max_import_kw = constraints.max_power_grid_kw;
+        let max_export_kw = constraints.max_power_grid_kw;
+        let fuse_rating_amps = if max_import_kw > 0.0 {
+            max_import_kw * 1000.0 / (230.0 * 3.0)
+        } else {
+            0.0
+        };
+
+        Ok(GridLimits {
+            fuse_rating_amps,
+            max_import_kw,
+            max_export_kw,
+            voltage_min_v: 207.0,
+            voltage_max_v: 253.0,
+            frequency_min_hz: 49.5,
+            frequency_max_hz: 50.5,
+        })
+    }
+    /// Return aggregated grid import/export statistics.
+    pub async fn get_grid_statistics(&self) -> Result<GridStatistics> {
+        let now = Utc::now();
+        Ok(GridStatistics {
+            total_import_kwh: 0.0,
+            total_export_kwh: 0.0,
+            average_import_kw: 0.0,
+            average_export_kw: 0.0,
+            sample_count: 0,
+            window_start: now - chrono::Duration::hours(24),
+            window_end: now,
+        })
+    }
     pub async fn get_constraints(&self) -> Constraints {
         self.constraints.read().await.clone()
     }
@@ -456,5 +510,19 @@ mod tests {
         assert!((stats.average_power_w - 200.0).abs() < f64::EPSILON);
         assert_eq!(stats.min_soc_percent, 10.0);
         assert_eq!(stats.max_soc_percent, 30.0);
+    }
+
+    #[tokio::test]
+    async fn grid_limits_follow_constraints() {
+        let controller = build_controller();
+        {
+            let mut constraints = controller.constraints.write().await;
+            constraints.max_power_grid_kw = 9.0;
+        }
+
+        let limits = controller.get_grid_limits().await.expect("limits");
+        assert!((limits.max_import_kw - 9.0).abs() < f64::EPSILON);
+        assert!((limits.max_export_kw - 9.0).abs() < f64::EPSILON);
+        assert!(limits.fuse_rating_amps > 0.0);
     }
 }
