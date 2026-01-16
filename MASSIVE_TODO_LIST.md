@@ -2326,7 +2326,7 @@
 - [x] Create `docs/ADR/005-forecast-approach.md`
 - [x] Create `docs/ADR/006-ml-framework.md`
 - [x] Create ADR template
-- [ ] Document ADR process
+- [x] Document ADR process
 
 ### API Documentation
 - [ ] Generate OpenAPI spec
@@ -2336,21 +2336,21 @@
 - [ ] Host documentation on GitHub Pages
 
 ### User Guide
-- [ ] Create `docs/USER_GUIDE.md`
-- [ ] Document installation process
-- [ ] Document configuration
-- [ ] Document basic usage
-- [ ] Add troubleshooting section
-- [ ] Add FAQ section
+- [x] Create `docs/USER_GUIDE.md`
+- [x] Document installation process
+- [x] Document configuration
+- [x] Document basic usage
+- [x] Add troubleshooting section
+- [x] Add FAQ section
 
 ### Developer Guide
-- [ ] Create `docs/DEVELOPER_GUIDE.md`
-- [ ] Document development setup
-- [ ] Document project structure
-- [ ] Document coding conventions
-- [ ] Document testing strategy
-- [ ] Document CI/CD pipeline
-- [ ] Add contribution guidelines
+- [x] Create `docs/DEVELOPER_GUIDE.md`
+- [x] Document development setup
+- [x] Document project structure
+- [x] Document coding conventions
+- [x] Document testing strategy
+- [x] Document CI/CD pipeline
+- [x] Add contribution guidelines
 
 ### README
 - [ ] Update README with project overview
