@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::domain::{
-    Battery, BatteryCapabilities, BatteryState, EvCharger, Inverter, InverterCapabilities,
-    InverterMode, InverterState, InverterStatus, SimulatedBattery, SimulatedEvCharger,
-    SimulatedInverter,
+    Battery, BatteryCapabilities, BatteryChemistry, BatteryState, BatteryStatus, EvCharger,
+    Inverter, InverterCapabilities, InverterMode, InverterState, InverterStatus,
+    SimulatedBattery, SimulatedEvCharger, SimulatedInverter,
 };
 
 /// Hardware mode configuration
@@ -43,6 +43,7 @@ impl DeviceFactory {
                     voltage_v: 48.0,
                     temperature_c: 25.0,
                     health_percent: 100.0,
+                    status: BatteryStatus::Idle,
                 };
                 Arc::new(SimulatedBattery::new(initial, caps))
             }
@@ -55,6 +56,7 @@ impl DeviceFactory {
                     voltage_v: 48.0,
                     temperature_c: 25.0,
                     health_percent: 100.0,
+                    status: BatteryStatus::Idle,
                 };
                 Arc::new(SimulatedBattery::new(initial, caps))
             }
@@ -67,6 +69,7 @@ impl DeviceFactory {
                     voltage_v: 48.0,
                     temperature_c: 25.0,
                     health_percent: 100.0,
+                    status: BatteryStatus::Idle,
                 };
                 Arc::new(SimulatedBattery::new(initial, caps))
             }
@@ -169,6 +172,7 @@ mod tests {
             max_discharge_kw: 5.0,
             efficiency: 0.92,
             degradation_per_cycle: 0.001,
+            chemistry: BatteryChemistry::LiFePO4,
         };
 
         let battery = factory.create_battery(caps, 50.0);

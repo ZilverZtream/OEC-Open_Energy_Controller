@@ -1,0 +1,66 @@
+# Generic Battery Configuration Profile
+# Use this as a template for custom battery integrations
+
+[device]
+manufacturer = "Generic"
+model = "Generic Battery"
+device_type = "Battery"
+protocol = "ModbusTCP"
+
+[modbus]
+default_port = 502
+unit_id = 1
+timeout_ms = 5000
+retry_count = 3
+
+[registers]
+# State of Charge (read-only)
+soc_address = 1000
+soc_scale = 1.0
+soc_unit = "percent"
+
+# Battery Power (read/write)
+power_address = 1010
+power_scale = 1.0
+power_unit = "watts"
+power_signed = true
+
+# Voltage (read-only)
+voltage_address = 1020
+voltage_scale = 0.1
+voltage_unit = "volts"
+
+# Temperature (read-only)
+temperature_address = 1030
+temperature_scale = 0.1
+temperature_unit = "celsius"
+
+# Health/State of Health (read-only)
+health_address = 1040
+health_scale = 1.0
+health_unit = "percent"
+
+# Max Charge Power (read-only)
+max_charge_power_address = 1050
+max_charge_power_scale = 1.0
+max_charge_power_unit = "watts"
+
+# Max Discharge Power (read-only)
+max_discharge_power_address = 1051
+max_discharge_power_scale = 1.0
+max_discharge_power_unit = "watts"
+
+[capabilities]
+capacity_kwh = 10.0
+max_charge_kw = 3.0
+max_discharge_kw = 3.0
+efficiency = 0.90
+chemistry = "LiFePO4"
+nominal_voltage = 48.0
+degradation_per_cycle = 0.02
+
+[limits]
+min_soc = 10.0
+max_soc = 90.0
+min_temperature = 0.0
+max_temperature = 40.0

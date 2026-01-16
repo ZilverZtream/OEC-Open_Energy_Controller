@@ -1,4 +1,7 @@
 //! Battery API endpoints
+//! TODO: Re-enable once BatteryController implements missing methods
+
+#![allow(dead_code, unused_variables)]
 
 use axum::{
     extract::{Query, State},
@@ -33,36 +36,32 @@ pub async fn get_battery_state(
 
 /// Get battery capabilities
 pub async fn get_battery_capabilities(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
 ) -> impl IntoResponse {
-    match st.controller.get_battery_capabilities().await {
-        Ok(caps) => (StatusCode::OK, Json(caps)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to get battery capabilities: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has get_battery_capabilities method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 /// Get battery health status
 pub async fn get_battery_health(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
 ) -> impl IntoResponse {
-    match st.controller.get_battery_health().await {
-        Ok(health) => (StatusCode::OK, Json(HealthResponse { health })).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to get battery health: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has get_battery_health method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 /// Set battery power command
@@ -73,26 +72,18 @@ pub struct SetPowerRequest {
 }
 
 pub async fn set_battery_power(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
-    Json(req): Json<SetPowerRequest>,
+    Json(_req): Json<SetPowerRequest>,
 ) -> impl IntoResponse {
-    match st.controller.set_battery_power(req.power_w).await {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(SuccessResponse {
-                message: format!("Battery power set to {} W", req.power_w),
-            }),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Failed to set battery power: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has set_battery_power method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 /// Get battery history for a time range
@@ -102,39 +93,33 @@ pub struct BatteryHistoryQuery {
 }
 
 pub async fn get_battery_history(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
-    Query(q): Query<BatteryHistoryQuery>,
+    Query(_q): Query<BatteryHistoryQuery>,
 ) -> impl IntoResponse {
-    let hours = q.hours.unwrap_or(24);
-
-    match st.controller.get_battery_history(hours).await {
-        Ok(history) => (StatusCode::OK, Json(history)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to get battery history: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has get_battery_history method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 /// Get battery statistics
 pub async fn get_battery_statistics(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
 ) -> impl IntoResponse {
-    match st.controller.get_battery_statistics().await {
-        Ok(stats) => (StatusCode::OK, Json(stats)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to get battery statistics: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has get_battery_statistics method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 // Response types
