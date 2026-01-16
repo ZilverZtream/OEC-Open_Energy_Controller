@@ -210,6 +210,282 @@ impl Constraints {
     }
 }
 
+/// Price forecast with confidence intervals
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PriceForecast {
+    /// Forecasted price points
+    pub points: Vec<PricePoint>,
+
+    /// Overall forecast confidence
+    pub confidence: ForecastConfidence,
+
+    /// Timestamp when forecast was generated
+    pub generated_at: DateTime<FixedOffset>,
+
+    /// Forecast source (e.g., "nordpool", "ml_model", "persistence")
+    pub source: String,
+}
+
+impl PriceForecast {
+    /// Create a new price forecast
+    pub fn new(
+        points: Vec<PricePoint>,
+        confidence: ForecastConfidence,
+        source: String,
+    ) -> Self {
+        Self {
+            points,
+            confidence,
+            generated_at: chrono::Utc::now().fixed_offset(),
+            source,
+        }
+    }
+
+    /// Get the price at a specific timestamp using linear interpolation
+    pub fn price_at(&self, timestamp: DateTime<FixedOffset>) -> Option<f64> {
+        interpolate_value(&self.points, timestamp, |p| p.price_sek_per_kwh)
+    }
+
+    /// Get the average price over the forecast period
+    pub fn average_price(&self) -> f64 {
+        if self.points.is_empty() {
+            return 0.0;
+        }
+        let sum: f64 = self.points.iter().map(|p| p.price_sek_per_kwh).sum();
+        sum / self.points.len() as f64
+    }
+
+    /// Get the minimum price in the forecast
+    pub fn min_price(&self) -> Option<f64> {
+        self.points
+            .iter()
+            .map(|p| p.price_sek_per_kwh)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+    }
+
+    /// Get the maximum price in the forecast
+    pub fn max_price(&self) -> Option<f64> {
+        self.points
+            .iter()
+            .map(|p| p.price_sek_per_kwh)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+    }
+}
+
+/// Consumption forecast with confidence intervals
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsumptionForecast {
+    /// Forecasted consumption points
+    pub points: Vec<ConsumptionPoint>,
+
+    /// Overall forecast confidence
+    pub confidence: ForecastConfidence,
+
+    /// Timestamp when forecast was generated
+    pub generated_at: DateTime<FixedOffset>,
+
+    /// Forecast source (e.g., "ml_model", "historical_average", "persistence")
+    pub source: String,
+}
+
+impl ConsumptionForecast {
+    /// Create a new consumption forecast
+    pub fn new(
+        points: Vec<ConsumptionPoint>,
+        confidence: ForecastConfidence,
+        source: String,
+    ) -> Self {
+        Self {
+            points,
+            confidence,
+            generated_at: chrono::Utc::now().fixed_offset(),
+            source,
+        }
+    }
+
+    /// Get the consumption at a specific timestamp using linear interpolation
+    pub fn consumption_at(&self, timestamp: DateTime<FixedOffset>) -> Option<f64> {
+        interpolate_value(&self.points, timestamp, |p| p.load_kw)
+    }
+
+    /// Get the total forecasted energy consumption (kWh)
+    pub fn total_energy_kwh(&self) -> f64 {
+        self.points
+            .iter()
+            .map(|p| {
+                let duration_hours = (p.time_end - p.time_start).num_seconds() as f64 / 3600.0;
+                p.load_kw * duration_hours
+            })
+            .sum()
+    }
+
+    /// Get the average consumption (kW)
+    pub fn average_consumption(&self) -> f64 {
+        if self.points.is_empty() {
+            return 0.0;
+        }
+        let sum: f64 = self.points.iter().map(|p| p.load_kw).sum();
+        sum / self.points.len() as f64
+    }
+}
+
+/// Production (solar) forecast with confidence intervals
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductionForecast {
+    /// Forecasted production points
+    pub points: Vec<ProductionPoint>,
+
+    /// Overall forecast confidence
+    pub confidence: ForecastConfidence,
+
+    /// Timestamp when forecast was generated
+    pub generated_at: DateTime<FixedOffset>,
+
+    /// Forecast source (e.g., "weather_based", "ml_model", "persistence")
+    pub source: String,
+}
+
+impl ProductionForecast {
+    /// Create a new production forecast
+    pub fn new(
+        points: Vec<ProductionPoint>,
+        confidence: ForecastConfidence,
+        source: String,
+    ) -> Self {
+        Self {
+            points,
+            confidence,
+            generated_at: chrono::Utc::now().fixed_offset(),
+            source,
+        }
+    }
+
+    /// Get the production at a specific timestamp using linear interpolation
+    pub fn production_at(&self, timestamp: DateTime<FixedOffset>) -> Option<f64> {
+        interpolate_value(&self.points, timestamp, |p| p.pv_kw)
+    }
+
+    /// Get the total forecasted energy production (kWh)
+    pub fn total_energy_kwh(&self) -> f64 {
+        self.points
+            .iter()
+            .map(|p| {
+                let duration_hours = (p.time_end - p.time_start).num_seconds() as f64 / 3600.0;
+                p.pv_kw * duration_hours
+            })
+            .sum()
+    }
+
+    /// Get the peak production (kW)
+    pub fn peak_production(&self) -> Option<f64> {
+        self.points
+            .iter()
+            .map(|p| p.pv_kw)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+    }
+}
+
+// Import types for the forecast point structs
+use crate::domain::types::{ConsumptionPoint, PricePoint, ProductionPoint};
+
+/// Helper function for linear interpolation between forecast points
+fn interpolate_value<T, F>(
+    points: &[T],
+    timestamp: DateTime<FixedOffset>,
+    value_fn: F,
+) -> Option<f64>
+where
+    T: TimePoint,
+    F: Fn(&T) -> f64,
+{
+    if points.is_empty() {
+        return None;
+    }
+
+    // Find the two points that bracket the timestamp
+    let mut prev: Option<&T> = None;
+    let mut next: Option<&T> = None;
+
+    for point in points {
+        if timestamp >= point.time_start() && timestamp <= point.time_end() {
+            // Timestamp is within this interval
+            return Some(value_fn(point));
+        }
+
+        if timestamp > point.time_end() {
+            prev = Some(point);
+        } else if timestamp < point.time_start() && next.is_none() {
+            next = Some(point);
+            break;
+        }
+    }
+
+    // Perform linear interpolation if we have both prev and next
+    if let (Some(p), Some(n)) = (prev, next) {
+        let t1 = p.time_end().timestamp() as f64;
+        let t2 = n.time_start().timestamp() as f64;
+        let t = timestamp.timestamp() as f64;
+
+        if (t2 - t1).abs() < 1e-10 {
+            // Timestamps are too close, return average
+            return Some((value_fn(p) + value_fn(n)) / 2.0);
+        }
+
+        let weight = (t - t1) / (t2 - t1);
+        let v1 = value_fn(p);
+        let v2 = value_fn(n);
+        return Some(v1 + weight * (v2 - v1));
+    }
+
+    // If we only have prev, return its value
+    if let Some(p) = prev {
+        return Some(value_fn(p));
+    }
+
+    // If we only have next, return its value
+    if let Some(n) = next {
+        return Some(value_fn(n));
+    }
+
+    None
+}
+
+/// Trait for types that have time bounds
+trait TimePoint {
+    fn time_start(&self) -> DateTime<FixedOffset>;
+    fn time_end(&self) -> DateTime<FixedOffset>;
+}
+
+impl TimePoint for PricePoint {
+    fn time_start(&self) -> DateTime<FixedOffset> {
+        self.time_start
+    }
+    fn time_end(&self) -> DateTime<FixedOffset> {
+        self.time_end
+    }
+}
+
+impl TimePoint for ConsumptionPoint {
+    fn time_start(&self) -> DateTime<FixedOffset> {
+        self.time_start
+    }
+    fn time_end(&self) -> DateTime<FixedOffset> {
+        self.time_end
+    }
+}
+
+impl TimePoint for ProductionPoint {
+    fn time_start(&self) -> DateTime<FixedOffset> {
+        self.time_start
+    }
+    fn time_end(&self) -> DateTime<FixedOffset> {
+        self.time_end
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

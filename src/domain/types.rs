@@ -1,6 +1,184 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::ops::{Add, Sub, Mul, Div};
+
+// ============================================================================
+// Time Helper Types
+// ============================================================================
+
+/// Duration helper type for time intervals
+/// Wraps chrono::Duration with convenience methods
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Duration(pub chrono::Duration);
+
+impl Duration {
+    /// Create a duration from seconds
+    pub fn seconds(secs: i64) -> Self {
+        Self(chrono::Duration::seconds(secs))
+    }
+
+    /// Create a duration from minutes
+    pub fn minutes(mins: i64) -> Self {
+        Self(chrono::Duration::minutes(mins))
+    }
+
+    /// Create a duration from hours
+    pub fn hours(hours: i64) -> Self {
+        Self(chrono::Duration::hours(hours))
+    }
+
+    /// Create a duration from days
+    pub fn days(days: i64) -> Self {
+        Self(chrono::Duration::days(days))
+    }
+
+    /// Get the duration in seconds
+    pub fn as_seconds(&self) -> i64 {
+        self.0.num_seconds()
+    }
+
+    /// Get the duration in minutes
+    pub fn as_minutes(&self) -> i64 {
+        self.0.num_minutes()
+    }
+
+    /// Get the duration in hours
+    pub fn as_hours(&self) -> i64 {
+        self.0.num_hours()
+    }
+
+    /// Get the duration in hours as f64
+    pub fn as_hours_f64(&self) -> f64 {
+        self.0.num_seconds() as f64 / 3600.0
+    }
+
+    /// Get the duration in days
+    pub fn as_days(&self) -> i64 {
+        self.0.num_days()
+    }
+
+    /// Get the inner chrono::Duration
+    pub fn inner(&self) -> chrono::Duration {
+        self.0
+    }
+}
+
+impl From<chrono::Duration> for Duration {
+    fn from(d: chrono::Duration) -> Self {
+        Self(d)
+    }
+}
+
+impl From<Duration> for chrono::Duration {
+    fn from(d: Duration) -> Self {
+        d.0
+    }
+}
+
+impl fmt::Display for Duration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let hours = self.as_hours();
+        let minutes = (self.as_seconds() % 3600) / 60;
+        write!(f, "{}h{}m", hours, minutes)
+    }
+}
+
+/// Timestamp helper type for specific points in time
+/// Wraps DateTime<FixedOffset> with convenience methods
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Timestamp(pub DateTime<FixedOffset>);
+
+impl Timestamp {
+    /// Create a timestamp from the current time
+    pub fn now() -> Self {
+        Self(chrono::Utc::now().fixed_offset())
+    }
+
+    /// Create a timestamp from a Unix timestamp (seconds since epoch)
+    pub fn from_unix(secs: i64) -> Option<Self> {
+        chrono::DateTime::from_timestamp(secs, 0)
+            .map(|dt| Self(dt.fixed_offset()))
+    }
+
+    /// Get the Unix timestamp (seconds since epoch)
+    pub fn as_unix(&self) -> i64 {
+        self.0.timestamp()
+    }
+
+    /// Add a duration to this timestamp
+    pub fn add(&self, duration: Duration) -> Self {
+        Self(self.0 + duration.0)
+    }
+
+    /// Subtract a duration from this timestamp
+    pub fn sub(&self, duration: Duration) -> Self {
+        Self(self.0 - duration.0)
+    }
+
+    /// Calculate the duration between two timestamps
+    pub fn duration_since(&self, other: &Timestamp) -> Duration {
+        Duration(self.0 - other.0)
+    }
+
+    /// Check if this timestamp is before another
+    pub fn is_before(&self, other: &Timestamp) -> bool {
+        self.0 < other.0
+    }
+
+    /// Check if this timestamp is after another
+    pub fn is_after(&self, other: &Timestamp) -> bool {
+        self.0 > other.0
+    }
+
+    /// Get the hour of the day (0-23)
+    pub fn hour(&self) -> u32 {
+        self.0.hour()
+    }
+
+    /// Get the day of the month (1-31)
+    pub fn day(&self) -> u32 {
+        self.0.day()
+    }
+
+    /// Get the month (1-12)
+    pub fn month(&self) -> u32 {
+        self.0.month()
+    }
+
+    /// Get the year
+    pub fn year(&self) -> i32 {
+        self.0.year()
+    }
+
+    /// Format as ISO 8601 string
+    pub fn to_rfc3339(&self) -> String {
+        self.0.to_rfc3339()
+    }
+
+    /// Get the inner DateTime
+    pub fn inner(&self) -> DateTime<FixedOffset> {
+        self.0
+    }
+}
+
+impl From<DateTime<FixedOffset>> for Timestamp {
+    fn from(dt: DateTime<FixedOffset>) -> Self {
+        Self(dt)
+    }
+}
+
+impl From<Timestamp> for DateTime<FixedOffset> {
+    fn from(ts: Timestamp) -> Self {
+        ts.0
+    }
+}
+
+impl fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.format("%Y-%m-%d %H:%M:%S %Z"))
+    }
+}
 
 // ============================================================================
 // Physical Unit Newtypes

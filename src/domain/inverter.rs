@@ -2,7 +2,29 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
+
+/// Inverter-specific errors
+#[derive(Debug, Error)]
+pub enum InverterError {
+    #[error("Communication error: {0}")]
+    Communication(String),
+    #[error("Invalid mode transition: {0} -> {1}")]
+    InvalidModeTransition(String, String),
+    #[error("Export limit not supported")]
+    ExportLimitNotSupported,
+    #[error("Invalid export limit: {0}W (exceeds maximum)")]
+    InvalidExportLimit(f64),
+    #[error("Inverter offline or unavailable")]
+    Offline,
+    #[error("Inverter in fault state: {0}")]
+    Fault(String),
+    #[error("Temperature out of range: {0}°C")]
+    TemperatureOutOfRange(f64),
+    #[error("Grid frequency out of range: {0} Hz")]
+    FrequencyOutOfRange(f64),
+}
 
 /// Solar/Hybrid Inverter trait - abstraction for Modbus or simulated inverters
 #[async_trait]
@@ -123,6 +145,24 @@ impl SimulatedInverter {
 
         // Apply efficiency to get AC output
         st.ac_output_power_w = st.pv_power_w * (st.efficiency_percent / 100.0);
+
+        // Temperature simulation - rises with power output
+        const AMBIENT_TEMP: f64 = 30.0;
+        const TEMP_RISE_PER_KW: f64 = 1.5; // °C per kW of power
+        const COOLING_RATE: f64 = 0.3; // °C per update when cooling
+
+        let power_kw = st.ac_output_power_w / 1000.0;
+        let target_temp = AMBIENT_TEMP + (power_kw * TEMP_RISE_PER_KW);
+
+        // Gradually approach target temperature
+        if st.temperature_c < target_temp {
+            st.temperature_c = (st.temperature_c + COOLING_RATE).min(target_temp);
+        } else {
+            st.temperature_c = (st.temperature_c - COOLING_RATE).max(target_temp);
+        }
+
+        // Clamp to reasonable range
+        st.temperature_c = st.temperature_c.clamp(20.0, 80.0);
     }
 }
 

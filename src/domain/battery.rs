@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, sync::Arc};
 use thiserror::Error;
 use tokio::sync::RwLock;
+use tokio::time::{sleep, Duration};
 
 /// Battery-specific errors
 #[derive(Debug, Error)]
@@ -122,6 +123,10 @@ pub struct BatteryCapabilities {
 pub struct SimulatedBattery {
     state: Arc<RwLock<BatteryState>>,
     caps: BatteryCapabilities,
+    /// Enable realistic communication delays (simulates Modbus latency)
+    pub simulate_delays: bool,
+    /// Enable random noise in sensor readings (realistic sensor variation)
+    pub simulate_noise: bool,
 }
 
 impl SimulatedBattery {
@@ -129,17 +134,85 @@ impl SimulatedBattery {
         Self {
             state: Arc::new(RwLock::new(initial)),
             caps,
+            simulate_delays: false,
+            simulate_noise: false,
         }
     }
+
+    /// Create a new simulated battery with realistic delays and noise enabled
+    pub fn new_realistic(initial: BatteryState, caps: BatteryCapabilities) -> Self {
+        Self {
+            state: Arc::new(RwLock::new(initial)),
+            caps,
+            simulate_delays: true,
+            simulate_noise: true,
+        }
+    }
+
     fn clamp_soc(soc: f64) -> f64 {
         soc.clamp(0.0, 100.0)
+    }
+
+    /// Add random noise to a value (±1% variation)
+    fn add_noise(&self, value: f64) -> f64 {
+        if !self.simulate_noise {
+            return value;
+        }
+
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hash, Hasher};
+
+        // Simple pseudo-random noise using hash of current time
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        let mut hasher = RandomState::new().build_hasher();
+        now.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Convert hash to a value between -0.01 and 0.01 (±1%)
+        let noise_factor = ((hash % 200) as f64 / 10000.0) - 0.01;
+        value * (1.0 + noise_factor)
     }
 }
 
 #[async_trait]
 impl Battery for SimulatedBattery {
     async fn read_state(&self) -> Result<BatteryState> {
-        Ok(self.state.read().await.clone())
+        // Simulate Modbus communication delay (50-150ms)
+        if self.simulate_delays {
+            use std::collections::hash_map::RandomState;
+            use std::hash::{BuildHasher, Hasher};
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+
+            let mut hasher = RandomState::new().build_hasher();
+            std::hash::Hash::hash(&now, &mut hasher);
+            let delay_ms = 50 + (hasher.finish() % 100) as u64;
+
+            sleep(Duration::from_millis(delay_ms)).await;
+        }
+
+        let state = self.state.read().await;
+
+        // Add noise to readings if enabled
+        if self.simulate_noise {
+            Ok(BatteryState {
+                soc_percent: self.add_noise(state.soc_percent).clamp(0.0, 100.0),
+                power_w: self.add_noise(state.power_w),
+                voltage_v: self.add_noise(state.voltage_v),
+                temperature_c: self.add_noise(state.temperature_c),
+                health_percent: self.add_noise(state.health_percent).clamp(0.0, 100.0),
+                status: state.status,
+            })
+        } else {
+            Ok(state.clone())
+        }
     }
 
     async fn set_power(&self, watts: f64) -> Result<()> {
@@ -159,6 +232,41 @@ impl Battery for SimulatedBattery {
         };
         let delta_pct = (delta_kwh / cap_kwh) * 100.0;
         st.soc_percent = Self::clamp_soc(st.soc_percent + delta_pct);
+
+        // Temperature simulation - rises during charging/discharging
+        // Base temperature is 25°C, increases with power and decreases when idle
+        const AMBIENT_TEMP: f64 = 25.0;
+        const TEMP_RISE_PER_KW: f64 = 2.0; // °C per kW of power
+        const COOLING_RATE: f64 = 0.5; // °C per time step when idle
+
+        let power_abs_kw = watts.abs() / 1000.0;
+        let target_temp = AMBIENT_TEMP + (power_abs_kw * TEMP_RISE_PER_KW);
+
+        // Gradually approach target temperature
+        if st.temperature_c < target_temp {
+            st.temperature_c = (st.temperature_c + COOLING_RATE).min(target_temp);
+        } else {
+            st.temperature_c = (st.temperature_c - COOLING_RATE).max(target_temp);
+        }
+
+        // Clamp to reasonable range
+        st.temperature_c = st.temperature_c.clamp(0.0, 60.0);
+
+        // Degradation simulation - health decreases with cycles
+        // A cycle is a full charge or discharge (100% SoC change)
+        let soc_change_pct = delta_pct.abs();
+        let partial_cycle = soc_change_pct / 100.0;
+        let degradation = self.caps.degradation_per_cycle * partial_cycle;
+        st.health_percent = (st.health_percent - degradation).max(0.0);
+
+        // Update status based on power
+        st.status = if watts > 10.0 {
+            BatteryStatus::Charging
+        } else if watts < -10.0 {
+            BatteryStatus::Discharging
+        } else {
+            BatteryStatus::Idle
+        };
 
         Ok(())
     }

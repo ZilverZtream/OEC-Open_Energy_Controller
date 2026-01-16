@@ -108,6 +108,23 @@ impl<'a> ScheduleRepository<'a> {
         Ok(schedules)
     }
 
+    /// Invalidate a schedule by setting its valid_until time to now
+    /// This makes the schedule inactive without deleting it
+    pub async fn invalidate(&self, id: Uuid) -> Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE schedules
+            SET valid_until = NOW()
+            WHERE id = $1 AND valid_until > NOW()
+            "#,
+            id
+        )
+        .execute(self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn delete(&self, id: Uuid) -> Result<()> {
         sqlx::query!(
             r#"
