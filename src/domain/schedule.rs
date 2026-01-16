@@ -88,6 +88,12 @@ impl Schedule {
 
         let mut previous_end: Option<DateTime<Utc>> = None;
         for (index, entry) in self.entries.iter().enumerate() {
+            // CRITICAL SAFETY FIX: Validate target_power_w is finite
+            // NaN or Inf power commands would cause undefined behavior in the controller
+            if !entry.target_power_w.is_finite() {
+                return Err(ScheduleValidationError::InvalidEntryRange { index });
+            }
+
             let interval = entry.interval();
             if interval.time_start >= interval.time_end {
                 return Err(ScheduleValidationError::InvalidEntryRange { index });

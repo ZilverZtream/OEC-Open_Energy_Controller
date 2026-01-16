@@ -88,15 +88,25 @@ impl EvState {
         let energy_needed = self.energy_needed_kwh();
         let time_until_departure = self.time_until_departure(now).unwrap_or(24.0);
 
-        // Calculate minimum required charge rate
-        let required_rate_kw = if time_until_departure > 0.0 {
+        // CRITICAL SAFETY FIX: Handle division by zero and edge cases
+        // If departure is now or in the past (time <= 0), maximum urgency
+        // If time is very small (< 0.01 hours = 36 seconds), also maximum urgency
+        const MIN_TIME_HOURS: f64 = 0.01; // 36 seconds minimum threshold
+        let required_rate_kw = if time_until_departure > MIN_TIME_HOURS {
             energy_needed / time_until_departure
         } else {
-            self.max_charge_kw // Urgent if departure is now/past
+            // Departure is imminent or past, use maximum urgency
+            self.max_charge_kw
         };
 
         // Urgency = required_rate / max_rate
-        (required_rate_kw / self.max_charge_kw).min(1.0)
+        // SAFETY: Prevent division by zero if max_charge_kw is zero
+        if self.max_charge_kw > 0.01 {
+            (required_rate_kw / self.max_charge_kw).min(1.0)
+        } else {
+            // If max charge rate is essentially zero, can't charge anyway
+            0.0
+        }
     }
 }
 
@@ -135,6 +145,35 @@ impl PowerFlowInputs {
 
     /// Validate inputs for sanity
     pub fn validate(&self) -> Result<(), String> {
+        // CRITICAL SAFETY FIX: Check all values are finite (not NaN or Inf)
+        // NaN/Inf from bad sensors could propagate and cause undefined behavior
+        if !self.pv_production_kw.is_finite() {
+            return Err(format!("pv_production_kw is not finite: {}", self.pv_production_kw));
+        }
+
+        if !self.house_load_kw.is_finite() {
+            return Err(format!("house_load_kw is not finite: {}", self.house_load_kw));
+        }
+
+        if !self.battery_soc_percent.is_finite() {
+            return Err(format!("battery_soc_percent is not finite: {}", self.battery_soc_percent));
+        }
+
+        if !self.battery_temp_c.is_finite() {
+            return Err(format!("battery_temp_c is not finite: {}", self.battery_temp_c));
+        }
+
+        if !self.grid_price_sek_kwh.is_finite() {
+            return Err(format!("grid_price_sek_kwh is not finite: {}", self.grid_price_sek_kwh));
+        }
+
+        if let Some(target) = self.target_power_w {
+            if !target.is_finite() {
+                return Err(format!("target_power_w is not finite: {}", target));
+            }
+        }
+
+        // Now check ranges
         if self.pv_production_kw < 0.0 {
             return Err("pv_production_kw cannot be negative".to_string());
         }
@@ -148,6 +187,24 @@ impl PowerFlowInputs {
         }
 
         if let Some(ref ev) = self.ev_state {
+            // CRITICAL SAFETY FIX: Check EV values are finite
+            if !ev.soc_percent.is_finite() {
+                return Err(format!("EV soc_percent is not finite: {}", ev.soc_percent));
+            }
+
+            if !ev.capacity_kwh.is_finite() {
+                return Err(format!("EV capacity_kwh is not finite: {}", ev.capacity_kwh));
+            }
+
+            if !ev.max_charge_kw.is_finite() {
+                return Err(format!("EV max_charge_kw is not finite: {}", ev.max_charge_kw));
+            }
+
+            if !ev.max_discharge_kw.is_finite() {
+                return Err(format!("EV max_discharge_kw is not finite: {}", ev.max_discharge_kw));
+            }
+
+            // Now check ranges
             if ev.soc_percent < 0.0 || ev.soc_percent > 100.0 {
                 return Err("EV soc_percent must be between 0 and 100".to_string());
             }

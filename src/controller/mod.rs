@@ -39,6 +39,8 @@ impl AppState {
     pub async fn new(cfg: Config) -> Result<Self> {
         let repos = Arc::new(Repositories::new(&cfg).await?);
 
+        // CRITICAL SAFETY FIX: Validate battery capabilities from config
+        // Invalid values could cause division by zero or logic errors throughout the system
         let caps = BatteryCapabilities {
             capacity_kwh: cfg.battery.capacity_kwh,
             max_charge_kw: cfg.battery.max_charge_kw,
@@ -47,6 +49,23 @@ impl AppState {
             degradation_per_cycle: cfg.battery.degradation_per_cycle,
             chemistry: crate::domain::BatteryChemistry::LiFePO4,
         };
+
+        // Validate capabilities
+        if !caps.capacity_kwh.is_finite() || caps.capacity_kwh <= 0.0 {
+            bail!("Battery capacity_kwh must be positive and finite, got: {}", caps.capacity_kwh);
+        }
+        if !caps.max_charge_kw.is_finite() || caps.max_charge_kw <= 0.0 {
+            bail!("Battery max_charge_kw must be positive and finite, got: {}", caps.max_charge_kw);
+        }
+        if !caps.max_discharge_kw.is_finite() || caps.max_discharge_kw <= 0.0 {
+            bail!("Battery max_discharge_kw must be positive and finite, got: {}", caps.max_discharge_kw);
+        }
+        if !caps.efficiency.is_finite() || caps.efficiency <= 0.0 || caps.efficiency > 1.0 {
+            bail!("Battery efficiency must be between 0 and 1, got: {}", caps.efficiency);
+        }
+        if !caps.degradation_per_cycle.is_finite() || caps.degradation_per_cycle < 0.0 {
+            bail!("Battery degradation_per_cycle must be non-negative and finite, got: {}", caps.degradation_per_cycle);
+        }
         let initial = BatteryState {
             soc_percent: cfg.battery.initial_soc_percent,
             power_w: 0.0,
@@ -272,15 +291,13 @@ impl BatteryController {
                     battery_target_w
                 }
                 Err(e) => {
-                    // If PowerFlowModel fails, fall back to schedule with safety clamps
-                    warn!(error=%e, "PowerFlowModel failed, using schedule fallback");
-
-                    // Apply basic safety checks
-                    let caps = self.battery.capabilities();
-                    let max_charge_w = caps.max_charge_kw * 1000.0;
-                    let max_discharge_w = caps.max_discharge_kw * 1000.0;
-
-                    schedule_target_w.unwrap_or(0.0).clamp(-max_discharge_w, max_charge_w)
+                    // CRITICAL SAFETY FIX: If PowerFlowModel fails, we don't know WHY it failed.
+                    // The model might have rejected our plan due to fuse limit, export limit, or other
+                    // physical constraints. The schedule target might be safe in isolation but unsafe
+                    // when combined with house load and other factors.
+                    // The ONLY safe fallback is to do nothing (0.0 = Idle).
+                    warn!(error=%e, "PowerFlowModel failed, entering safe fallback mode (Idle)");
+                    0.0
                 }
             };
 
@@ -509,9 +526,15 @@ impl BatteryController {
 /// The deadband prevents hunting for small differences, reducing battery wear.
 /// Output clamping ensures we don't command power beyond physical limits.
 fn simple_p_control(actual_w: f64, target_w: f64, max_charge_w: f64, max_discharge_w: f64) -> f64 {
-    // NaN/Inf protection: if either input is not finite, return 0
+    // CRITICAL SAFETY FIX D8: Validate all parameters are finite and limits are positive
     if !actual_w.is_finite() || !target_w.is_finite() {
         return 0.0;
+    }
+    if !max_charge_w.is_finite() || !max_discharge_w.is_finite() {
+        return 0.0;
+    }
+    if max_charge_w <= 0.0 || max_discharge_w <= 0.0 {
+        return 0.0; // Invalid limits, can't control safely
     }
 
     let error = target_w - actual_w;
