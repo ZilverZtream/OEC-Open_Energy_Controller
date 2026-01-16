@@ -1,3 +1,5 @@
+pub mod pid;
+
 use anyhow::Result;
 use chrono::{DateTime, FixedOffset, Local};
 use std::sync::Arc;
@@ -6,6 +8,8 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::Config;
+
+pub use pid::{PidController, PowerPidController};
 use crate::domain::{Battery, BatteryCapabilities, BatteryState, Forecast24h, PriceArea, Schedule};
 use crate::forecast::{
     ElprisetJustNuPriceForecaster, ForecastEngine, SimpleConsumptionForecaster,
