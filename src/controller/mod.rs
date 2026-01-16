@@ -24,8 +24,8 @@ use crate::domain::{
     GridStatistics, GridStatus, HealthStatus, PriceArea, Schedule,
 };
 use crate::forecast::{
-    ElprisetJustNuPriceForecaster, ForecastEngine, GeoLocation, SimpleConsumptionForecaster,
-    SimpleProductionForecaster, SmhiClient, WeatherForecast,
+    ConsumptionForecaster, ElprisetJustNuPriceForecaster, ForecastEngine, GeoLocation,
+    SimpleConsumptionForecaster, SimpleProductionForecaster, SmhiClient, WeatherForecast,
 };
 use crate::optimizer::{BatteryOptimizer, Constraints, DynamicProgrammingOptimizer, SystemState};
 use crate::repo::Repositories;
@@ -94,9 +94,27 @@ impl AppState {
             std::time::Duration::from_secs(cfg.prices.cache_ttl_seconds),
         )?);
 
+        // Use ML-enhanced forecaster if enabled, otherwise use simple baseline
+        #[cfg(feature = "ml")]
+        let consumption_forecaster: Box<dyn ConsumptionForecaster> = if cfg.forecast.use_ml_models {
+            Box::new(
+                crate::forecast::consumption::MLConsumptionForecaster::new(
+                    cfg.household.latitude,
+                    cfg.household.longitude,
+                )
+                .await,
+            )
+        } else {
+            Box::new(SimpleConsumptionForecaster)
+        };
+
+        #[cfg(not(feature = "ml"))]
+        let consumption_forecaster: Box<dyn ConsumptionForecaster> =
+            Box::new(SimpleConsumptionForecaster);
+
         let forecast_engine = Arc::new(ForecastEngine::new(
             price,
-            Box::new(SimpleConsumptionForecaster),
+            consumption_forecaster,
             Box::new(SimpleProductionForecaster::default()),
         ));
 
@@ -176,22 +194,35 @@ impl AppState {
 }
 
 pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
-    let controller = Arc::clone(&state.controller);
+    let state_arc = Arc::new(state);
+
+    let controller = Arc::clone(&state_arc.controller);
+    let cfg_clone = cfg.clone();
     tokio::spawn(async move {
-        if let Err(e) = controller.run(cfg.controller.tick_seconds).await {
+        if let Err(e) = controller.run(cfg_clone.controller.tick_seconds).await {
             warn!(error=%e, "controller loop stopped");
         }
     });
 
-    let controller2 = Arc::clone(&state.controller);
+    let controller2 = Arc::clone(&state_arc.controller);
+    let cfg_clone2 = cfg.clone();
     tokio::spawn(async move {
         if let Err(e) = controller2
-            .reoptimize_loop(cfg.controller.reoptimize_every_minutes)
+            .reoptimize_loop(cfg_clone2.controller.reoptimize_every_minutes)
             .await
         {
             warn!(error=%e, "reoptimize loop stopped");
         }
     });
+
+    // Start periodic task scheduler (includes ML training)
+    if cfg.forecast.use_ml_models {
+        let scheduler = Arc::new(scheduler::TaskScheduler::new(state_arc.clone()));
+        scheduler.start();
+        info!("Task scheduler started with ML training enabled");
+    } else {
+        info!("ML models disabled in configuration - skipping task scheduler");
+    }
 }
 
 pub struct BatteryController {

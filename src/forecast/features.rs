@@ -137,7 +137,60 @@ impl FeatureExtractor {
     }
 }
 
-/// Normalize features for ML models
+/// Create cyclical features from time components
+/// This preserves temporal continuity (e.g., hour 23 is close to hour 0)
+pub fn create_cyclical_features(timestamp: DateTime<FixedOffset>) -> Vec<f64> {
+    let hour = timestamp.hour() as f64;
+    let day_of_week = timestamp.weekday().num_days_from_monday() as f64;
+    let month = timestamp.month() as f64;
+
+    vec![
+        // Hour cyclical encoding (24-hour cycle)
+        (2.0 * std::f64::consts::PI * hour / 24.0).sin(),
+        (2.0 * std::f64::consts::PI * hour / 24.0).cos(),
+        // Day of week cyclical encoding (7-day cycle)
+        (2.0 * std::f64::consts::PI * day_of_week / 7.0).sin(),
+        (2.0 * std::f64::consts::PI * day_of_week / 7.0).cos(),
+        // Month cyclical encoding (12-month cycle)
+        (2.0 * std::f64::consts::PI * month / 12.0).sin(),
+        (2.0 * std::f64::consts::PI * month / 12.0).cos(),
+    ]
+}
+
+/// Normalize features for ML models with cyclical time encoding
+pub fn normalize_features_cyclical(features: &TimeSeriesFeatures) -> Vec<f64> {
+    let hour = features.hour_of_day as f64;
+    let day_of_week = features.day_of_week as f64;
+    let month = features.month as f64;
+
+    vec![
+        // Cyclical hour encoding (preserves hour 23 ~ hour 0 relationship)
+        (2.0 * std::f64::consts::PI * hour / 24.0).sin(),
+        (2.0 * std::f64::consts::PI * hour / 24.0).cos(),
+        // Cyclical day of week encoding
+        (2.0 * std::f64::consts::PI * day_of_week / 7.0).sin(),
+        (2.0 * std::f64::consts::PI * day_of_week / 7.0).cos(),
+        // Cyclical month encoding
+        (2.0 * std::f64::consts::PI * month / 12.0).sin(),
+        (2.0 * std::f64::consts::PI * month / 12.0).cos(),
+        // Day of month (normalized)
+        features.day_of_month as f64 / 31.0,
+        // Binary features
+        if features.is_weekend { 1.0 } else { 0.0 },
+        if features.is_holiday { 1.0 } else { 0.0 },
+        // Weather features (with sensible defaults)
+        (features.temperature_c.unwrap_or(15.0) + 20.0) / 60.0, // Scale -20°C to +40°C -> [0, 1]
+        features.cloud_cover_percent.unwrap_or(50.0) / 100.0,
+        features.wind_speed_ms.unwrap_or(5.0) / 30.0,
+        // Season as cyclical feature
+        (2.0 * std::f64::consts::PI * features.season as f64 / 4.0).sin(),
+        (2.0 * std::f64::consts::PI * features.season as f64 / 4.0).cos(),
+        // Day length (normalized)
+        features.day_length_hours / 24.0,
+    ]
+}
+
+/// Normalize features for ML models (legacy version, kept for compatibility)
 pub fn normalize_features(features: &TimeSeriesFeatures) -> Vec<f64> {
     vec![
         features.hour_of_day as f64 / 24.0,
@@ -277,5 +330,99 @@ mod tests {
         // Winter solstice (around day 355)
         let winter_day_length = extractor.calculate_day_length(355, 59.3293);
         assert!(winter_day_length < 7.0); // Short days in winter
+    }
+
+    #[test]
+    fn test_cyclical_features() {
+        use chrono::TimeZone;
+        let timestamp = chrono::FixedOffset::east_opt(3600)
+            .unwrap()
+            .with_ymd_and_hms(2024, 6, 15, 12, 0, 0)
+            .unwrap();
+
+        let cyclical = create_cyclical_features(timestamp);
+
+        // Should return 6 features (sin/cos for hour, day_of_week, month)
+        assert_eq!(cyclical.len(), 6);
+
+        // All values should be between -1 and 1 (sin/cos range)
+        for value in cyclical {
+            assert!(value >= -1.0 && value <= 1.0);
+        }
+    }
+
+    #[test]
+    fn test_normalize_features_cyclical() {
+        let features = TimeSeriesFeatures {
+            hour_of_day: 12,
+            day_of_week: 3,
+            day_of_month: 15,
+            month: 6,
+            is_weekend: false,
+            is_holiday: false,
+            temperature_c: Some(20.0),
+            cloud_cover_percent: Some(50.0),
+            wind_speed_ms: Some(5.0),
+            season: 2,
+            day_length_hours: 16.0,
+        };
+
+        let normalized = normalize_features_cyclical(&features);
+
+        // Should return 15 features with cyclical encoding
+        assert_eq!(normalized.len(), 15);
+
+        // Most values should be between -1 and 1 or 0 and 1
+        for (i, value) in normalized.iter().enumerate() {
+            if i < 6 || (i >= 12 && i < 14) {
+                // Cyclical features (sin/cos)
+                assert!(
+                    *value >= -1.0 && *value <= 1.0,
+                    "Cyclical feature {} out of range: {}",
+                    i,
+                    value
+                );
+            } else {
+                // Normalized features
+                assert!(
+                    *value >= 0.0 && *value <= 1.0,
+                    "Normalized feature {} out of range: {}",
+                    i,
+                    value
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_cyclical_continuity() {
+        // Test that hour 23 and hour 0 are close in cyclical space
+        let features_23 = TimeSeriesFeatures {
+            hour_of_day: 23,
+            day_of_week: 3,
+            day_of_month: 15,
+            month: 6,
+            is_weekend: false,
+            is_holiday: false,
+            temperature_c: Some(20.0),
+            cloud_cover_percent: Some(50.0),
+            wind_speed_ms: Some(5.0),
+            season: 2,
+            day_length_hours: 16.0,
+        };
+
+        let features_0 = TimeSeriesFeatures {
+            hour_of_day: 0,
+            ..features_23.clone()
+        };
+
+        let norm_23 = normalize_features_cyclical(&features_23);
+        let norm_0 = normalize_features_cyclical(&features_0);
+
+        // Calculate Euclidean distance between first 2 features (hour encoding)
+        let dist = ((norm_23[0] - norm_0[0]).powi(2) + (norm_23[1] - norm_0[1]).powi(2)).sqrt();
+
+        // Distance should be small (much less than linear encoding would give)
+        assert!(dist < 0.5, "Cyclical encoding should preserve hour continuity");
     }
 }

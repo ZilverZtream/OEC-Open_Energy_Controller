@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+#[cfg(all(feature = "ml", feature = "db"))]
+use anyhow::Context;
+use chrono::{DateTime, Utc, Timelike};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::{interval, Duration};
+use tokio::time::{interval, sleep, Duration};
 use tracing::{error, info, warn};
 
 use super::{AppState, BatteryController};
@@ -19,6 +21,10 @@ pub struct PeriodicTaskConfig {
     pub cleanup_interval_secs: u64,
     /// Health check interval (seconds)
     pub health_check_interval_secs: u64,
+    /// ML training hour (0-23, default 3 AM)
+    pub ml_training_hour: u32,
+    /// Enable ML training (default true if ml feature is enabled)
+    pub enable_ml_training: bool,
 }
 
 impl Default for PeriodicTaskConfig {
@@ -28,6 +34,8 @@ impl Default for PeriodicTaskConfig {
             forecast_refresh_interval_secs: 1800,  // 30 minutes
             cleanup_interval_secs: 86400,          // 24 hours
             health_check_interval_secs: 300,       // 5 minutes
+            ml_training_hour: 3,                   // 3 AM
+            enable_ml_training: cfg!(feature = "ml"), // Enable if ml feature is enabled
         }
     }
 }
@@ -60,27 +68,36 @@ impl Default for TaskStatus {
 pub struct TaskScheduler {
     config: PeriodicTaskConfig,
     controller: Arc<BatteryController>,
+    app_state: Arc<AppState>,
     reoptimize_status: Arc<RwLock<TaskStatus>>,
     forecast_status: Arc<RwLock<TaskStatus>>,
     cleanup_status: Arc<RwLock<TaskStatus>>,
     health_status: Arc<RwLock<TaskStatus>>,
+    ml_training_status: Arc<RwLock<TaskStatus>>,
 }
 
 impl TaskScheduler {
     /// Create a new task scheduler
-    pub fn new(controller: Arc<BatteryController>) -> Self {
-        Self::with_config(controller, PeriodicTaskConfig::default())
+    pub fn new(app_state: Arc<AppState>) -> Self {
+        let controller = app_state.controller.clone();
+        Self::with_config(app_state, controller, PeriodicTaskConfig::default())
     }
 
     /// Create a new task scheduler with custom configuration
-    pub fn with_config(controller: Arc<BatteryController>, config: PeriodicTaskConfig) -> Self {
+    pub fn with_config(
+        app_state: Arc<AppState>,
+        controller: Arc<BatteryController>,
+        config: PeriodicTaskConfig,
+    ) -> Self {
         Self {
             config,
             controller,
+            app_state,
             reoptimize_status: Arc::new(RwLock::new(TaskStatus::default())),
             forecast_status: Arc::new(RwLock::new(TaskStatus::default())),
             cleanup_status: Arc::new(RwLock::new(TaskStatus::default())),
             health_status: Arc::new(RwLock::new(TaskStatus::default())),
+            ml_training_status: Arc::new(RwLock::new(TaskStatus::default())),
         }
     }
 
@@ -109,6 +126,17 @@ impl TaskScheduler {
         tokio::spawn(async move {
             scheduler.run_health_check_task().await;
         });
+
+        // Spawn ML training task (if enabled)
+        if self.config.enable_ml_training {
+            let scheduler = self.clone();
+            tokio::spawn(async move {
+                scheduler.run_ml_training_task().await;
+            });
+            info!("ML training task enabled (runs at {}:00 daily)", self.config.ml_training_hour);
+        } else {
+            info!("ML training task disabled");
+        }
 
         info!("All periodic tasks started");
     }
@@ -257,6 +285,157 @@ impl TaskScheduler {
     pub async fn get_health_status(&self) -> TaskStatus {
         self.health_status.read().await.clone()
     }
+
+    /// Get ML training task status
+    pub async fn get_ml_training_status(&self) -> TaskStatus {
+        self.ml_training_status.read().await.clone()
+    }
+
+    /// Run nightly ML training task
+    ///
+    /// This task runs once per day at the configured hour (default: 03:00 AM)
+    /// to train the consumption forecasting model on recent historical data.
+    async fn run_ml_training_task(&self) {
+        loop {
+            // Calculate time until next training run
+            let now = Utc::now();
+            // Use training_hour from ML config if available, otherwise use scheduler config
+            let target_hour = self
+                .app_state
+                .cfg
+                .forecast
+                .ml_training
+                .as_ref()
+                .map(|ml| ml.training_hour)
+                .unwrap_or(self.config.ml_training_hour);
+
+            // Calculate next training time
+            let next_run = if now.hour() < target_hour {
+                // Today at target hour
+                now.date_naive()
+                    .and_hms_opt(target_hour, 0, 0)
+                    .unwrap()
+                    .and_local_timezone(now.timezone())
+                    .unwrap()
+            } else {
+                // Tomorrow at target hour
+                (now + chrono::Duration::days(1))
+                    .date_naive()
+                    .and_hms_opt(target_hour, 0, 0)
+                    .unwrap()
+                    .and_local_timezone(now.timezone())
+                    .unwrap()
+            };
+
+            let sleep_duration = (next_run - now).to_std().unwrap_or(Duration::from_secs(60));
+
+            info!(
+                "Next ML training scheduled for {} (in {} hours)",
+                next_run.format("%Y-%m-%d %H:%M:%S"),
+                sleep_duration.as_secs() / 3600
+            );
+
+            // Sleep until training time
+            sleep(sleep_duration).await;
+
+            // Run training
+            let now = Utc::now();
+            let mut status = self.ml_training_status.write().await;
+            status.last_run = Some(now);
+            status.run_count += 1;
+            drop(status);
+
+            info!("Starting nightly ML training for consumption forecasting");
+
+            #[cfg(all(feature = "ml", feature = "db"))]
+            {
+                match self.train_model_internal().await {
+                    Ok(()) => {
+                        let mut status = self.ml_training_status.write().await;
+                        status.last_success = Some(now);
+                        status.success_count += 1;
+                        status.last_error = None;
+                        info!("ML training completed successfully");
+                    }
+                    Err(e) => {
+                        let mut status = self.ml_training_status.write().await;
+                        status.error_count += 1;
+                        status.last_error = Some(e.to_string());
+                        error!(error = %e, "ML training failed");
+                    }
+                }
+            }
+
+            #[cfg(not(feature = "ml"))]
+            {
+                warn!("ML feature not enabled, skipping training");
+                let mut status = self.ml_training_status.write().await;
+                status.last_error = Some("ML feature not enabled".to_string());
+            }
+        }
+    }
+
+    /// Internal method to train the model
+    ///
+    /// Separated for easier testing and error handling
+    #[cfg(all(feature = "ml", feature = "db"))]
+    async fn train_model_internal(&self) -> Result<()> {
+        use crate::ml::inference::persistence::{
+            ensure_model_directory, get_consumption_model_path, save_model_to_disk,
+        };
+        use crate::ml::training::consumption_trainer::{
+            train_consumption_model, ConsumptionTrainingConfig,
+        };
+
+        // Get configuration values from AppState
+        let household_id = uuid::Uuid::parse_str(&self.app_state.cfg.household.id)
+            .context("Invalid household ID in configuration")?;
+        let latitude = self.app_state.cfg.household.latitude;
+        let longitude = self.app_state.cfg.household.longitude;
+
+        info!(
+            "Training consumption model for household {} at ({}, {})",
+            household_id, latitude, longitude
+        );
+
+        // Ensure model directory exists
+        ensure_model_directory().await?;
+
+        // Get consumption repository
+        let consumption_repo = self.app_state.repos.db.consumption();
+
+        // Create training config from user settings or use defaults
+        let training_config = if let Some(ml_config) = &self.app_state.cfg.forecast.ml_training {
+            ConsumptionTrainingConfig {
+                history_days: ml_config.history_days,
+                max_samples: ml_config.max_samples,
+                validation_split: ml_config.validation_split,
+                n_trees: ml_config.n_trees,
+                max_depth: ml_config.max_depth,
+                min_samples_split: ml_config.min_samples_split,
+            }
+        } else {
+            ConsumptionTrainingConfig::default()
+        };
+
+        // Train the model
+        let trained_model = train_consumption_model(
+            &consumption_repo,
+            household_id,
+            latitude,
+            longitude,
+            training_config,
+        )
+        .await?;
+
+        // Save model to disk
+        let model_path = get_consumption_model_path();
+        save_model_to_disk(trained_model, &model_path).await?;
+
+        info!("Model saved successfully to {}", model_path.display());
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -268,9 +447,9 @@ mod tests {
     #[tokio::test]
     async fn test_task_scheduler_creation() {
         let config = Config::load().unwrap();
-        let app_state = AppState::new(config).await.unwrap();
+        let app_state = Arc::new(AppState::new(config).await.unwrap());
 
-        let scheduler = TaskScheduler::new(app_state.controller.clone());
+        let scheduler = TaskScheduler::new(app_state);
 
         let reopt_status = scheduler.get_reoptimize_status().await;
         assert_eq!(reopt_status.run_count, 0);
@@ -284,9 +463,13 @@ mod tests {
             forecast_refresh_interval_secs: 30,
             cleanup_interval_secs: 300,
             health_check_interval_secs: 10,
+            ml_training_hour: 3,
+            enable_ml_training: true,
         };
 
         assert_eq!(config.reoptimize_interval_secs, 60);
         assert_eq!(config.forecast_refresh_interval_secs, 30);
+        assert_eq!(config.ml_training_hour, 3);
+        assert!(config.enable_ml_training);
     }
 }

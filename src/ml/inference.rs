@@ -207,6 +207,125 @@ impl EnsemblePredictor {
     }
 }
 
+/// Model Persistence Module
+///
+/// Provides functionality to save and load trained models to/from disk.
+pub mod persistence {
+    use anyhow::Result;
+    use std::path::Path;
+    use tokio::fs;
+    use tracing::{info, warn};
+
+    #[cfg(feature = "ml")]
+    use crate::ml::smartcore::SmartcoreRandomForest;
+
+    /// Default model storage directory
+    pub const DEFAULT_MODEL_DIR: &str = "/var/lib/oec/models";
+
+    /// Model file naming convention
+    pub const CONSUMPTION_MODEL_NAME: &str = "consumption_v1.bin";
+
+    /// Get the full path for the consumption model
+    pub fn get_consumption_model_path() -> std::path::PathBuf {
+        Path::new(DEFAULT_MODEL_DIR).join(CONSUMPTION_MODEL_NAME)
+    }
+
+    /// Ensure model directory exists
+    pub async fn ensure_model_directory() -> Result<()> {
+        fs::create_dir_all(DEFAULT_MODEL_DIR).await?;
+        Ok(())
+    }
+
+    /// Save a SmartCore model to disk
+    #[cfg(feature = "ml")]
+    pub async fn save_model_to_disk(
+        mut model: SmartcoreRandomForest,
+        path: &Path,
+    ) -> Result<()> {
+        info!("Saving model to {}", path.display());
+
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+
+        // Prepare model for serialization (serialize internal state)
+        model.prepare_for_serialization()?;
+
+        // Serialize model to JSON
+        let json = serde_json::to_string_pretty(&model)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize model to JSON: {}", e))?;
+
+        let json_len = json.len();
+
+        // Write to disk
+        fs::write(path, json).await?;
+
+        info!(
+            "Model saved successfully: {} bytes",
+            json_len
+        );
+
+        Ok(())
+    }
+
+    /// Load a SmartCore model from disk
+    #[cfg(feature = "ml")]
+    pub async fn load_model_from_disk(path: &Path) -> Result<SmartcoreRandomForest> {
+        info!("Loading model from {}", path.display());
+
+        // Check if file exists
+        if !path.exists() {
+            anyhow::bail!("Model file does not exist: {}", path.display());
+        }
+
+        // Read file
+        let json = fs::read_to_string(path).await?;
+
+        // Deserialize model
+        let mut model: SmartcoreRandomForest = serde_json::from_str(&json)
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize model: {}", e))?;
+
+        // Restore internal state from serialized bytes
+        model.restore_from_serialization()?;
+
+        info!(
+            "Model loaded successfully: trained at {}, {} samples",
+            model.metadata.trained_at, model.metadata.training_samples
+        );
+
+        Ok(model)
+    }
+
+    /// Check if a model file exists
+    pub async fn model_exists(path: &Path) -> bool {
+        path.exists()
+    }
+
+    /// Delete a model file
+    pub async fn delete_model(path: &Path) -> Result<()> {
+        if path.exists() {
+            fs::remove_file(path).await?;
+            info!("Deleted model at {}", path.display());
+        } else {
+            warn!("Model file does not exist: {}", path.display());
+        }
+        Ok(())
+    }
+
+    /// Get model metadata without loading the full model
+    #[cfg(feature = "ml")]
+    pub async fn get_model_metadata(path: &Path) -> Result<crate::ml::ModelMetadata> {
+        let json = fs::read_to_string(path).await?;
+
+        // We only need to deserialize the metadata field
+        let model: SmartcoreRandomForest = serde_json::from_str(&json)
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize model metadata: {}", e))?;
+
+        Ok(model.metadata)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

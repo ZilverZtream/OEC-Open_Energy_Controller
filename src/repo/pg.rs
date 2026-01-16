@@ -11,6 +11,8 @@ pub use battery_states::BatteryStateRepository;
 pub use devices::DeviceRepository;
 pub use schedules::ScheduleRepository;
 
+use crate::repo::consumption::ConsumptionRepository;
+
 pub struct PgRepo {
     pub pool: PgPool,
 }
@@ -37,5 +39,10 @@ impl PgRepo {
     /// Get a schedule repository
     pub fn schedules(&self) -> ScheduleRepository {
         ScheduleRepository::new(&self.pool)
+    }
+
+    /// Get a consumption history repository
+    pub fn consumption(&self) -> ConsumptionRepository {
+        ConsumptionRepository::new(self.pool.clone())
     }
 }

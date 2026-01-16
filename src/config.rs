@@ -19,6 +19,9 @@ pub struct AppConfig {
     pub auth: AuthConfig,
 
     #[validate(nested)]
+    pub household: HouseholdConfig,
+
+    #[validate(nested)]
     pub controller: ControllerConfig,
 
     #[validate(nested)]
@@ -93,6 +96,29 @@ pub struct AuthConfig {
 
     #[serde(default)]
     pub jwt_secret: Option<String>,
+}
+
+/// Household configuration for ML training and forecasting
+#[derive(Debug, Clone, Deserialize, Serialize, Validate)]
+pub struct HouseholdConfig {
+    /// Unique household identifier (UUIDv4)
+    #[validate(length(min = 1))]
+    pub id: String,
+
+    /// Household name/description
+    #[serde(default = "default_household_name")]
+    pub name: String,
+
+    /// Geographic location for weather and solar forecasting
+    #[validate(range(min = -90.0, max = 90.0))]
+    pub latitude: f64,
+
+    #[validate(range(min = -180.0, max = 180.0))]
+    pub longitude: f64,
+
+    /// Timezone (e.g., "Europe/Stockholm")
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
 }
 
 /// Controller loop configuration
@@ -358,6 +384,48 @@ pub struct ForecastConfig {
 
     #[serde(default = "default_cache_ttl_secs")]
     pub cache_ttl_secs: u64,
+
+    /// ML training configuration (optional, uses defaults if not specified)
+    #[serde(default)]
+    pub ml_training: Option<MLTrainingConfig>,
+}
+
+/// ML Training configuration for consumption forecasting
+#[derive(Debug, Clone, Deserialize, Serialize, Validate)]
+pub struct MLTrainingConfig {
+    /// Number of days of historical data to use for training
+    #[validate(range(min = 7, max = 180))]
+    #[serde(default = "default_ml_history_days")]
+    pub history_days: i64,
+
+    /// Maximum number of samples (prevents OOM on Raspberry Pi)
+    #[validate(range(min = 1000, max = 100_000))]
+    #[serde(default = "default_ml_max_samples")]
+    pub max_samples: usize,
+
+    /// Validation split ratio (0.0 to 1.0)
+    #[validate(range(min = 0.05, max = 0.5))]
+    #[serde(default = "default_ml_validation_split")]
+    pub validation_split: f64,
+
+    /// Number of trees in RandomForest
+    #[validate(range(min = 10, max = 200))]
+    #[serde(default = "default_ml_n_trees")]
+    pub n_trees: usize,
+
+    /// Maximum tree depth (None = unlimited, Some(n) = limited)
+    #[serde(default = "default_ml_max_depth")]
+    pub max_depth: Option<usize>,
+
+    /// Minimum samples required to split a node
+    #[validate(range(min = 2, max = 50))]
+    #[serde(default = "default_ml_min_samples_split")]
+    pub min_samples_split: usize,
+
+    /// Hour of day to run training (0-23, default 3 AM)
+    #[validate(range(min = 0, max = 23))]
+    #[serde(default = "default_ml_training_hour")]
+    pub training_hour: u32,
 }
 
 /// Weather API configuration
@@ -464,6 +532,15 @@ fn default_cache_ttl_secs() -> u64 { 3600 }
 fn default_cache_ttl_seconds() -> u64 { 3600 }
 fn default_log_level() -> String { "info".to_string() }
 fn default_metrics_port() -> u16 { 9090 }
+fn default_household_name() -> String { "Default Household".to_string() }
+fn default_timezone() -> String { "UTC".to_string() }
+fn default_ml_history_days() -> i64 { 30 }
+fn default_ml_max_samples() -> usize { 50_000 }
+fn default_ml_validation_split() -> f64 { 0.1 }
+fn default_ml_n_trees() -> usize { 50 }
+fn default_ml_max_depth() -> Option<usize> { Some(10) }
+fn default_ml_min_samples_split() -> usize { 5 }
+fn default_ml_training_hour() -> u32 { 3 }
 
 impl AppConfig {
     /// Load configuration from TOML files and environment variables
