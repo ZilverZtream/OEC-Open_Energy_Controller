@@ -1,0 +1,11 @@
+/target
+/.git
+/.gitignore
+/.env
+/.env.*
+**/*.rs.bk
+**/*.swp
+**/*.tmp
+**/*.log
+**/*.db
+/migrations/*.sqlx
