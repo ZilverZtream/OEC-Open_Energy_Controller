@@ -183,6 +183,7 @@ impl BatteryController {
             .optimizer
             .optimize(&state, &forecast, &constraints)
             .await?;
+        schedule.validate().map_err(|err| anyhow::anyhow!(err))?;
         *self.schedule.write().await = Some(schedule);
         Ok(())
     }
@@ -190,8 +191,10 @@ impl BatteryController {
     pub async fn get_schedule(&self) -> Option<Schedule> {
         self.schedule.read().await.clone()
     }
-    pub async fn set_schedule(&self, schedule: Schedule) {
+    pub async fn set_schedule(&self, schedule: Schedule) -> Result<()> {
+        schedule.validate().map_err(|err| anyhow::anyhow!(err))?;
         *self.schedule.write().await = Some(schedule);
+        Ok(())
     }
     pub async fn get_current_state(&self) -> Result<BatteryState> {
         self.battery.read_state().await

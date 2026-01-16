@@ -137,8 +137,10 @@ pub async fn set_schedule(
     AuthBearer(_): AuthBearer,
     Json(schedule): Json<Schedule>,
 ) -> impl IntoResponse {
-    st.controller.set_schedule(schedule).await;
-    StatusCode::NO_CONTENT
+    match st.controller.set_schedule(schedule).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(err(e))).into_response(),
+    }
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]

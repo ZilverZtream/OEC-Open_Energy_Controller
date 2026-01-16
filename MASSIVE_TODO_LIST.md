@@ -515,9 +515,9 @@
 ### Schedule & Optimization Domain
 - [ ] Create `src/domain/schedule.rs`
 - [ ] Create `Schedule` struct (time-series of power setpoints)
-- [ ] Create `ScheduleInterval` struct (start time, end time, power)
+- [x] Create `ScheduleInterval` struct (start time, end time, power)
 - [ ] Implement `Schedule::power_at(timestamp: DateTime) -> Power` method
-- [ ] Implement `Schedule::validate()` method (check bounds, gaps, etc.)
+- [x] Implement `Schedule::validate()` method (check bounds, gaps, etc.)
 - [ ] Create `OptimizationObjective` enum (MinimizeCost, MaximizeArbitrage, etc.)
 - [ ] Create `Constraints` struct (min SoC, max cycles, grid limits)
 - [x] Add unit tests for schedule logic
