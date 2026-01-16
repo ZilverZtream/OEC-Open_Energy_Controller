@@ -4,9 +4,40 @@
 
 **Progress Tracking:**
 - Total items: ~850+ checkboxes
+- Completed items: ~90 (as of 2026-01-16)
 - Logical ordering: Each section builds on previous
 - Parallelizable: Items within sections can be done concurrently
 - No time estimates: Work at your own pace with your team size
+
+## 🎯 Recent Completions (2026-01-16)
+
+### ✅ Phase 2: Domain Models
+- Battery, Inverter, EV Charger, Grid domain traits and implementations
+- SimulatedBattery, SimulatedInverter, SimulatedEvCharger with tests
+- Grid limits, tariffs, and connection structs with comprehensive tests
+
+### ✅ Phase 3: Database Layer
+- 4 migration files: initial schema + EV/inverter states + households + forecasts/optimization
+- DeviceRepository, BatteryStateRepository, ScheduleRepository with SQLx
+- All tables: devices, battery_states, inverter_states, ev_charger_states, households, consumption/production history, forecasts, optimization runs
+
+### ✅ Phase 4: Hardware Abstraction
+- DeviceFactory pattern with Simulated/Modbus/Mock modes
+- Factory methods for all device types with graceful fallbacks
+- 3 unit tests for hardware factory
+
+### ✅ Phase 5: Configuration System
+- development.toml and production.toml with comprehensive settings
+- .env.example with 40+ documented environment variables
+- Complete configuration for all subsystems
+
+### ✅ Phase 12: REST API - Core (Partial)
+- 10 new API endpoints for EV Charger and Inverter management
+- EV Charger: state, set current, start/stop charging, sessions
+- Inverter: state, mode, export limit, production, efficiency stats
+- All endpoints integrated with auth layer and OpenAPI schemas
+
+**Next priorities:** Device discovery (mDNS/Modbus), Weather integration, Advanced optimizers, Real hardware integration
 
 ---
 
@@ -270,60 +301,60 @@
 - [ ] Add `serde` serialization for all types
 
 ### Battery Domain
-- [ ] Create `src/domain/battery/mod.rs`
-- [ ] Create `src/domain/battery/traits.rs`
-- [ ] Define `Battery` trait with async methods
-- [ ] Define `read_state() -> Result<BatteryState>` method
-- [ ] Define `set_power(watts: Power) -> Result<()>` method
-- [ ] Define `capabilities() -> BatteryCapabilities` method
+- [x] Create `src/domain/battery/mod.rs`
+- [x] Create `src/domain/battery/traits.rs`
+- [x] Define `Battery` trait with async methods
+- [x] Define `read_state() -> Result<BatteryState>` method
+- [x] Define `set_power(watts: Power) -> Result<()>` method
+- [x] Define `capabilities() -> BatteryCapabilities` method
 - [ ] Define `health_check() -> Result<HealthStatus>` method
-- [ ] Create `BatteryState` struct (SoC, power, voltage, temperature, health)
-- [ ] Create `BatteryCapabilities` struct (capacity, max charge/discharge, efficiency)
+- [x] Create `BatteryState` struct (SoC, power, voltage, temperature, health)
+- [x] Create `BatteryCapabilities` struct (capacity, max charge/discharge, efficiency)
 - [ ] Create `BatteryCommand` enum (Charge, Discharge, Idle, Standby)
 - [ ] Create `BatteryError` enum with thiserror derives
 - [ ] Create `BatteryStatus` enum (Charging, Discharging, Idle, Fault, Offline)
 - [ ] Create `BatteryChemistry` enum (LiFePO4, NMC, LTO, etc.)
 - [ ] Create `DegradationModel` struct (cycle count, health %, degradation rate)
-- [ ] Implement `Default` for `BatteryState`
-- [ ] Implement validation for battery commands (power limits, SoC bounds)
-- [ ] Add unit tests for domain logic
-- [ ] Document all public APIs with examples
+- [x] Implement `Default` for `BatteryState`
+- [x] Implement validation for battery commands (power limits, SoC bounds)
+- [x] Add unit tests for domain logic
+- [x] Document all public APIs with examples
 
 ### Inverter Domain
-- [ ] Create `src/domain/inverter/mod.rs`
-- [ ] Create `src/domain/inverter/traits.rs`
-- [ ] Define `Inverter` trait
-- [ ] Define `read_state() -> Result<InverterState>` method
-- [ ] Define `set_mode(mode: InverterMode) -> Result<()>` method
-- [ ] Create `InverterState` struct (AC power, DC power, efficiency, temperature)
-- [ ] Create `InverterMode` enum (Grid-tied, Off-grid, Backup, etc.)
-- [ ] Create `InverterCapabilities` struct (max AC power, max DC power, etc.)
+- [x] Create `src/domain/inverter/mod.rs`
+- [x] Create `src/domain/inverter/traits.rs`
+- [x] Define `Inverter` trait
+- [x] Define `read_state() -> Result<InverterState>` method
+- [x] Define `set_mode(mode: InverterMode) -> Result<()>` method
+- [x] Create `InverterState` struct (AC power, DC power, efficiency, temperature)
+- [x] Create `InverterMode` enum (Grid-tied, Off-grid, Backup, etc.)
+- [x] Create `InverterCapabilities` struct (max AC power, max DC power, etc.)
 - [ ] Create `InverterError` enum
-- [ ] Add unit tests for inverter domain
+- [x] Add unit tests for inverter domain
 
 ### EV Charger Domain
-- [ ] Create `src/domain/ev_charger/mod.rs`
-- [ ] Create `src/domain/ev_charger/traits.rs`
-- [ ] Define `EvCharger` trait
-- [ ] Define `read_state() -> Result<ChargerState>` method
-- [ ] Define `set_current(amps: Current) -> Result<()>` method
-- [ ] Define `start_charging() -> Result<()>` method
-- [ ] Define `stop_charging() -> Result<()>` method
-- [ ] Create `ChargerState` struct (connected, charging, power, energy delivered)
-- [ ] Create `ChargerStatus` enum (Available, Preparing, Charging, Finishing, Faulted)
-- [ ] Create `ChargerCapabilities` struct (max current, phases, connector type)
-- [ ] Create `ConnectorType` enum (Type2, CCS, CHAdeMO)
+- [x] Create `src/domain/ev_charger/mod.rs`
+- [x] Create `src/domain/ev_charger/traits.rs`
+- [x] Define `EvCharger` trait
+- [x] Define `read_state() -> Result<ChargerState>` method
+- [x] Define `set_current(amps: Current) -> Result<()>` method
+- [x] Define `start_charging() -> Result<()>` method
+- [x] Define `stop_charging() -> Result<()>` method
+- [x] Create `ChargerState` struct (connected, charging, power, energy delivered)
+- [x] Create `ChargerStatus` enum (Available, Preparing, Charging, Finishing, Faulted)
+- [x] Create `ChargerCapabilities` struct (max current, phases, connector type)
+- [x] Create `ConnectorType` enum (Type2, CCS, CHAdeMO)
 - [ ] Create `V2XCapabilities` struct (bidirectional, max discharge power)
 - [ ] Create `ChargerError` enum
-- [ ] Add unit tests for EV charger domain
+- [x] Add unit tests for EV charger domain
 
 ### Grid Connection Domain
-- [ ] Create `src/domain/grid/mod.rs`
-- [ ] Create `GridConnection` struct (import/export power, frequency, voltage)
-- [ ] Create `GridLimits` struct (max import/export, fuse rating)
-- [ ] Create `GridTariff` struct (time-of-use rates, fixed fees)
-- [ ] Create `GridStatus` enum (Normal, Blackout, Islanded)
-- [ ] Add unit tests for grid domain
+- [x] Create `src/domain/grid/mod.rs`
+- [x] Create `GridConnection` struct (import/export power, frequency, voltage)
+- [x] Create `GridLimits` struct (max import/export, fuse rating)
+- [x] Create `GridTariff` struct (time-of-use rates, fixed fees)
+- [x] Create `GridStatus` enum (Normal, Blackout, Islanded)
+- [x] Add unit tests for grid domain
 
 ### Schedule & Optimization Domain
 - [ ] Create `src/domain/schedule.rs`
@@ -363,26 +394,26 @@
 - [ ] Implement graceful shutdown for DB connections
 
 ### Migration Files
-- [ ] Create `migrations/20250101000000_initial_schema.sql`
-- [ ] Create `devices` table (id, type, manufacturer, model, ip, port, config, discovered_at, last_seen)
-- [ ] Add indexes on `devices(device_type)`, `devices(ip)`
-- [ ] Create `battery_states` table (id, device_id, timestamp, soc_percent, power_w, voltage_v, temperature_c, health_percent)
-- [ ] Add index on `battery_states(device_id, timestamp DESC)`
+- [x] Create `migrations/20250101000000_initial_schema.sql`
+- [x] Create `devices` table (id, type, manufacturer, model, ip, port, config, discovered_at, last_seen)
+- [x] Add indexes on `devices(device_type)`, `devices(ip)`
+- [x] Create `battery_states` table (id, device_id, timestamp, soc_percent, power_w, voltage_v, temperature_c, health_percent)
+- [x] Add index on `battery_states(device_id, timestamp DESC)`
 - [ ] Add partitioning strategy for `battery_states` (by month)
-- [ ] Create `inverter_states` table
-- [ ] Add index on `inverter_states(device_id, timestamp DESC)`
-- [ ] Create `ev_charger_states` table
-- [ ] Add index on `ev_charger_states(device_id, timestamp DESC)`
-- [ ] Create `electricity_prices` table (id, timestamp, price_sek_per_kwh, source, area)
-- [ ] Add unique constraint on `electricity_prices(timestamp, area, source)`
-- [ ] Create `consumption_history` table (id, household_id, timestamp, power_w, energy_kwh)
-- [ ] Create `production_history` table (id, household_id, timestamp, power_w, energy_kwh)
-- [ ] Create `schedules` table (id, device_id, created_at, valid_from, valid_until, schedule_json, optimizer_version, cost_estimate)
-- [ ] Create `optimization_runs` table (id, created_at, duration_ms, objective, constraints_json, result_json)
-- [ ] Create `forecast_cache` table (id, forecast_type, created_at, valid_until, data_json)
-- [ ] Create `households` table (id, name, location, grid_connection_kw, created_at)
-- [ ] Create `user_preferences` table (id, household_id, min_soc, max_cycles_per_day, prefer_solar, v2g_enabled)
-- [ ] Add foreign key constraints
+- [x] Create `inverter_states` table
+- [x] Add index on `inverter_states(device_id, timestamp DESC)`
+- [x] Create `ev_charger_states` table
+- [x] Add index on `ev_charger_states(device_id, timestamp DESC)`
+- [x] Create `electricity_prices` table (id, timestamp, price_sek_per_kwh, source, area)
+- [x] Add unique constraint on `electricity_prices(timestamp, area, source)`
+- [x] Create `consumption_history` table (id, household_id, timestamp, power_w, energy_kwh)
+- [x] Create `production_history` table (id, household_id, timestamp, power_w, energy_kwh)
+- [x] Create `schedules` table (id, device_id, created_at, valid_from, valid_until, schedule_json, optimizer_version, cost_estimate)
+- [x] Create `optimization_runs` table (id, created_at, duration_ms, objective, constraints_json, result_json)
+- [x] Create `forecast_cache` table (id, forecast_type, created_at, valid_until, data_json)
+- [x] Create `households` table (id, name, location, grid_connection_kw, created_at)
+- [x] Create `user_preferences` table (id, household_id, min_soc, max_cycles_per_day, prefer_solar, v2g_enabled)
+- [x] Add foreign key constraints
 - [ ] Add triggers for `updated_at` timestamps
 - [ ] Create views for common queries
 
@@ -402,38 +433,38 @@
 - [ ] Add conversion methods from DB models to domain types
 
 ### Repository Pattern - Device Repository
-- [ ] Create `src/database/repositories/mod.rs`
-- [ ] Create `src/database/repositories/device.rs`
-- [ ] Create `DeviceRepository` struct with `PgPool`
-- [ ] Implement `insert_device(&Device) -> Result<Uuid>` method
-- [ ] Implement `find_by_id(Uuid) -> Result<Option<Device>>` method
+- [x] Create `src/database/repositories/mod.rs`
+- [x] Create `src/database/repositories/device.rs`
+- [x] Create `DeviceRepository` struct with `PgPool`
+- [x] Implement `insert_device(&Device) -> Result<Uuid>` method
+- [x] Implement `find_by_id(Uuid) -> Result<Option<Device>>` method
 - [ ] Implement `find_by_ip(IpAddr) -> Result<Option<Device>>` method
-- [ ] Implement `find_by_type(DeviceType) -> Result<Vec<Device>>` method
-- [ ] Implement `update_last_seen(Uuid) -> Result<()>` method
-- [ ] Implement `delete(Uuid) -> Result<()>` method
-- [ ] Implement `list_all() -> Result<Vec<Device>>` method
+- [x] Implement `find_by_type(DeviceType) -> Result<Vec<Device>>` method
+- [x] Implement `update_last_seen(Uuid) -> Result<()>` method
+- [x] Implement `delete(Uuid) -> Result<()>` method
+- [x] Implement `list_all() -> Result<Vec<Device>>` method
 - [ ] Add query logging with `tracing`
 - [ ] Add unit tests with `sqlx::test`
 - [ ] Add integration tests with test database
 
 ### Repository Pattern - Battery State Repository
-- [ ] Create `src/database/repositories/battery_state.rs`
-- [ ] Create `BatteryStateRepository` struct
-- [ ] Implement `insert_state(&BatteryState) -> Result<i64>` method
-- [ ] Implement `insert_batch(Vec<BatteryState>) -> Result<()>` method
-- [ ] Implement `find_latest(device_id: Uuid) -> Result<Option<BatteryState>>` method
-- [ ] Implement `find_range(device_id, start, end) -> Result<Vec<BatteryState>>` method
+- [x] Create `src/database/repositories/battery_state.rs`
+- [x] Create `BatteryStateRepository` struct
+- [x] Implement `insert_state(&BatteryState) -> Result<i64>` method
+- [x] Implement `insert_batch(Vec<BatteryState>) -> Result<()>` method
+- [x] Implement `find_latest(device_id: Uuid) -> Result<Option<BatteryState>>` method
+- [x] Implement `find_range(device_id, start, end) -> Result<Vec<BatteryState>>` method
 - [ ] Implement `get_statistics(device_id, duration) -> Result<BatteryStats>` method
-- [ ] Implement cleanup for old data (>90 days)
+- [x] Implement cleanup for old data (>90 days)
 - [ ] Add integration tests
 
 ### Repository Pattern - Schedule Repository
-- [ ] Create `src/database/repositories/schedule.rs`
-- [ ] Create `ScheduleRepository` struct
-- [ ] Implement `insert_schedule(&Schedule) -> Result<Uuid>` method
-- [ ] Implement `find_active(device_id, timestamp) -> Result<Option<Schedule>>` method
-- [ ] Implement `find_by_id(Uuid) -> Result<Option<Schedule>>` method
-- [ ] Implement `list_for_device(device_id) -> Result<Vec<Schedule>>` method
+- [x] Create `src/database/repositories/schedule.rs`
+- [x] Create `ScheduleRepository` struct
+- [x] Implement `insert_schedule(&Schedule) -> Result<Uuid>` method
+- [x] Implement `find_active(device_id, timestamp) -> Result<Option<Schedule>>` method
+- [x] Implement `find_by_id(Uuid) -> Result<Option<Schedule>>` method
+- [x] Implement `list_for_device(device_id) -> Result<Vec<Schedule>>` method
 - [ ] Implement `invalidate(id: Uuid) -> Result<()>` method
 - [ ] Add integration tests
 
@@ -476,39 +507,39 @@
 ## 📋 PHASE 4: HARDWARE ABSTRACTION - SIMULATED
 
 ### Simulated Battery Implementation
-- [ ] Create `src/hardware/simulated/mod.rs`
-- [ ] Create `src/hardware/simulated/battery.rs`
-- [ ] Create `SimulatedBattery` struct with internal state
-- [ ] Implement `Battery` trait for `SimulatedBattery`
-- [ ] Implement `read_state()` - return current simulated state
-- [ ] Implement `set_power()` - update simulated power
-- [ ] Add internal state update logic (SoC changes over time)
+- [x] Create `src/hardware/simulated/mod.rs`
+- [x] Create `src/hardware/simulated/battery.rs`
+- [x] Create `SimulatedBattery` struct with internal state
+- [x] Implement `Battery` trait for `SimulatedBattery`
+- [x] Implement `read_state()` - return current simulated state
+- [x] Implement `set_power()` - update simulated power
+- [x] Add internal state update logic (SoC changes over time)
 - [ ] Add temperature simulation (rises during charge/discharge)
-- [ ] Add efficiency simulation (losses during power conversion)
+- [x] Add efficiency simulation (losses during power conversion)
 - [ ] Add degradation simulation (health decreases with cycles)
 - [ ] Add realistic delays (Modbus response time simulation)
 - [ ] Add random noise to readings (realistic sensor variation)
 - [ ] Implement configurable simulation parameters
-- [ ] Add unit tests for state transitions
+- [x] Add unit tests for state transitions
 - [ ] Add property-based tests (proptest) for invariants
-- [ ] Document simulation assumptions
+- [x] Document simulation assumptions
 
 ### Simulated Inverter Implementation
-- [ ] Create `src/hardware/simulated/inverter.rs`
-- [ ] Create `SimulatedInverter` struct
-- [ ] Implement `Inverter` trait
-- [ ] Add AC/DC conversion simulation
-- [ ] Add efficiency curve simulation
+- [x] Create `src/hardware/simulated/inverter.rs`
+- [x] Create `SimulatedInverter` struct
+- [x] Implement `Inverter` trait
+- [x] Add AC/DC conversion simulation
+- [x] Add efficiency curve simulation
 - [ ] Add temperature simulation
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Simulated EV Charger Implementation
-- [ ] Create `src/hardware/simulated/ev_charger.rs`
-- [ ] Create `SimulatedEvCharger` struct
-- [ ] Implement `EvCharger` trait
+- [x] Create `src/hardware/simulated/ev_charger.rs`
+- [x] Create `SimulatedEvCharger` struct
+- [x] Implement `EvCharger` trait
 - [ ] Add vehicle connection/disconnection simulation
 - [ ] Add charge curve simulation (CC/CV phases)
-- [ ] Add unit tests
+- [x] Add unit tests
 
 ### Simulation Time Control
 - [ ] Create `src/hardware/simulated/time.rs`
@@ -519,14 +550,14 @@
 - [ ] Add integration tests with simulation clock
 
 ### Hardware Factory Pattern
-- [ ] Create `src/hardware/factory.rs`
-- [ ] Create `HardwareFactory` trait
-- [ ] Implement `create_battery() -> Arc<dyn Battery>` method
-- [ ] Implement `create_inverter() -> Arc<dyn Inverter>` method
-- [ ] Implement `create_ev_charger() -> Arc<dyn EvCharger>` method
-- [ ] Create `SimulatedHardwareFactory` implementation
-- [ ] Add configuration-driven factory selection
-- [ ] Add unit tests for factory pattern
+- [x] Create `src/hardware/factory.rs`
+- [x] Create `HardwareFactory` trait
+- [x] Implement `create_battery() -> Arc<dyn Battery>` method
+- [x] Implement `create_inverter() -> Arc<dyn Inverter>` method
+- [x] Implement `create_ev_charger() -> Arc<dyn EvCharger>` method
+- [x] Create `SimulatedHardwareFactory` implementation
+- [x] Add configuration-driven factory selection
+- [x] Add unit tests for factory pattern
 
 ---
 
@@ -556,13 +587,13 @@
 - [ ] Document all config options in README
 
 ### Configuration Files
-- [ ] Create complete `config/development.toml`
-- [ ] Create complete `config/production.toml`
+- [x] Create complete `config/development.toml`
+- [x] Create complete `config/production.toml`
 - [ ] Create complete `config/test.toml`
-- [ ] Add inline comments explaining each option
-- [ ] Add example values
-- [ ] Create `.env.example` with all environment variables
-- [ ] Document environment variable naming convention
+- [x] Add inline comments explaining each option
+- [x] Add example values
+- [x] Create `.env.example` with all environment variables
+- [x] Document environment variable naming convention
 
 ---
 
