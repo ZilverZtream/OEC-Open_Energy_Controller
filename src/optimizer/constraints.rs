@@ -13,6 +13,8 @@ pub struct Constraints {
     pub battery_max_charge_kw: f64,
     pub battery_max_discharge_kw: f64,
     pub battery_efficiency: f64,
+    pub battery_degradation_per_cycle: f64,
+    pub battery_replacement_cost_sek: f64,
 }
 
 impl Default for Constraints {
@@ -27,6 +29,8 @@ impl Default for Constraints {
             battery_max_charge_kw: 5.0,
             battery_max_discharge_kw: 5.0,
             battery_efficiency: 0.95,
+            battery_degradation_per_cycle: 0.0001,
+            battery_replacement_cost_sek: 50000.0,
         }
     }
 }

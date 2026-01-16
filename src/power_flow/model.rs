@@ -138,6 +138,10 @@ impl PowerFlowModel {
     }
 
     /// Decide battery power (charge/discharge/idle)
+    ///
+    /// Priority hierarchy:
+    /// 1. If optimizer provides a target_power_w, use it (within safety constraints)
+    /// 2. Otherwise, use greedy heuristics (PV excess, price arbitrage, etc.)
     fn decide_battery_power(
         &self,
         inputs: &PowerFlowInputs,
@@ -148,6 +152,36 @@ impl PowerFlowModel {
         let soc = inputs.battery_soc_percent;
         let min_soc = self.constraints.safety.battery_min_soc_percent;
         let max_soc = self.constraints.safety.battery_max_soc_percent;
+
+        // PRIORITY 1: If optimizer schedule provides target power, use it (with safety checks)
+        if let Some(target_w) = inputs.target_power_w {
+            let target_kw = target_w / 1000.0;
+
+            // Apply safety constraints
+            let safe_target_kw = if target_kw > 0.0 {
+                // Charging: respect max charge rate and max SoC
+                if soc >= max_soc {
+                    0.0 // Already at max SoC, don't charge
+                } else {
+                    target_kw.min(self.constraints.physical.max_battery_charge_kw)
+                }
+            } else if target_kw < 0.0 {
+                // Discharging: respect max discharge rate and min SoC
+                if soc <= min_soc {
+                    0.0 // Already at min SoC, don't discharge
+                } else {
+                    // Respect max discharge rate
+                    let available_discharge_kw = self.constraints.physical.max_battery_discharge_kw;
+                    target_kw.max(-available_discharge_kw)
+                }
+            } else {
+                0.0 // Idle
+            };
+
+            return (safe_target_kw, available_pv_kw);
+        }
+
+        // PRIORITY 2: Greedy heuristics (fallback when no schedule exists)
 
         // Case 1: Excess PV available - charge battery
         if available_pv_kw > BATTERY_MIN_POWER_THRESHOLD_KW && soc < max_soc {
@@ -163,8 +197,7 @@ impl PowerFlowModel {
 
             if price > threshold || self.constraints.economic.prefer_self_consumption {
                 let discharge_kw = house_deficit_kw
-                    .min(self.constraints.physical.max_battery_discharge_kw)
-                    .min((soc - min_soc) / 100.0 * 50.0); // Simplified SoC check
+                    .min(self.constraints.physical.max_battery_discharge_kw);
                 return (-discharge_kw, available_pv_kw);
             }
         }

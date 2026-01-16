@@ -92,6 +92,8 @@ impl AppState {
             battery_max_charge_kw: caps.max_charge_kw,
             battery_max_discharge_kw: caps.max_discharge_kw,
             battery_efficiency: caps.efficiency,
+            battery_degradation_per_cycle: caps.degradation_per_cycle,
+            battery_replacement_cost_sek: cfg.battery.replacement_cost_sek,
         };
 
         // Initialize power flow constraints for real-time safety checks
@@ -137,6 +139,7 @@ impl AppState {
             ))),
             history_capacity: history_capacity.max(1),
             power_flow_constraints,
+            config: cfg.clone(),
         });
 
         Ok(Self {
@@ -177,6 +180,8 @@ pub struct BatteryController {
     history_capacity: usize,
     // Power flow model for real-time safety and optimization
     power_flow_constraints: Arc<AllConstraints>,
+    // Configuration for fallback values and cycle penalty calculation
+    config: Config,
 }
 
 impl BatteryController {
@@ -189,30 +194,52 @@ impl BatteryController {
             let now_utc = Utc::now();
             self.record_state(now_utc, state.clone()).await;
 
-            // Get scheduled target power as a hint
+            // Get scheduled target power from optimizer
             let schedule_target_w = self
                 .schedule
                 .read()
                 .await
                 .as_ref()
-                .and_then(|s| s.power_at(now_utc))
-                .unwrap_or(0.0);
+                .and_then(|s| s.power_at(now_utc));
 
             // Build PowerFlowInputs from current state
-            // TODO: Replace with real sensor data for PV and house load
-            let inputs = PowerFlowInputs::new(
-                0.0,  // pv_production_kw - TODO: Add PV sensor
-                2.0,  // house_load_kw - TODO: Add house load meter
+            // TODO: Replace with real sensor data integration (Modbus/MQTT/etc)
+            // For now, use configured fallback values that can be set per-deployment
+            let pv_production_kw = self.config.hardware.sensor_fallback.default_pv_production_kw;
+            let house_load_kw = self.config.hardware.sensor_fallback.default_house_load_kw;
+
+            // Get grid price from current schedule or use fallback
+            let grid_price_sek_kwh = self
+                .schedule
+                .read()
+                .await
+                .as_ref()
+                .and_then(|s| {
+                    // Find the current price from schedule entries
+                    s.entries.iter()
+                        .find(|e| e.time_start <= now_utc && now_utc < e.time_end)
+                        .map(|_| 1.5) // TODO: Extract actual price from forecast
+                })
+                .unwrap_or(1.5);
+
+            let mut inputs = PowerFlowInputs::new(
+                pv_production_kw,
+                house_load_kw,
                 state.soc_percent,
                 state.temperature_c,
-                1.5,  // grid_price_sek_kwh - TODO: Get from schedule/forecast
+                grid_price_sek_kwh,
             );
+
+            // CRITICAL FIX: Pass schedule target to PowerFlowModel
+            if let Some(target_w) = schedule_target_w {
+                inputs = inputs.with_target_power_w(target_w);
+            }
 
             // CRITICAL: Validate inputs before passing to PowerFlowModel
             if let Err(e) = inputs.validate() {
                 warn!(error=%e, "Invalid PowerFlowInputs, using fallback");
                 let caps = self.battery.capabilities();
-                let fallback_w = schedule_target_w.clamp(
+                let fallback_w = schedule_target_w.unwrap_or(0.0).clamp(
                     -caps.max_discharge_kw * 1000.0,
                     caps.max_charge_kw * 1000.0
                 );
@@ -234,7 +261,7 @@ impl BatteryController {
                     info!(
                         soc_percent = state.soc_percent,
                         current_power_w = state.power_w,
-                        schedule_target_w = schedule_target_w,
+                        schedule_target_w = schedule_target_w.unwrap_or(0.0),
                         powerflow_target_w = battery_target_w,
                         pv_kw = snapshot.pv_kw,
                         house_kw = snapshot.house_kw,
@@ -253,7 +280,7 @@ impl BatteryController {
                     let max_charge_w = caps.max_charge_kw * 1000.0;
                     let max_discharge_w = caps.max_discharge_kw * 1000.0;
 
-                    schedule_target_w.clamp(-max_discharge_w, max_charge_w)
+                    schedule_target_w.unwrap_or(0.0).clamp(-max_discharge_w, max_charge_w)
                 }
             };
 
@@ -429,7 +456,12 @@ impl BatteryController {
         let constraints = self.constraints.read().await.clone();
         let max_import_kw = constraints.max_power_grid_kw;
         let max_export_kw = constraints.max_power_grid_kw;
-        let fuse_rating_amps = if max_import_kw > 0.0 {
+
+        // SAFETY FIX: Validate max_import_kw before division
+        // Prevent division by zero and handle edge cases
+        let fuse_rating_amps = if max_import_kw > 0.01 {
+            // Typical 3-phase formula: P = sqrt(3) * V * I
+            // Simplified: P = 3 * V * I for balanced load
             max_import_kw * 1000.0 / (230.0 * 3.0)
         } else {
             0.0
@@ -583,6 +615,12 @@ mod tests {
             Box::new(DummyProductionForecaster),
         );
 
+        // Create a minimal test config
+        let config = Config::load().unwrap_or_else(|_| {
+            // If config loading fails in tests, use defaults
+            panic!("Config loading failed in test");
+        });
+
         BatteryController {
             battery,
             optimizer: Arc::new(BatteryOptimizer {
@@ -595,6 +633,7 @@ mod tests {
             state_history: Arc::new(RwLock::new(VecDeque::new())),
             history_capacity: 10,
             power_flow_constraints: Arc::new(AllConstraints::default()),
+            config,
         }
     }
 

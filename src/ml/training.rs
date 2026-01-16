@@ -40,7 +40,15 @@ impl TrainingDataset {
             anyhow::bail!("Train ratio must be between 0 and 1");
         }
 
+        if self.len() == 0 {
+            anyhow::bail!("Cannot split empty dataset");
+        }
+
+        // PRECISION FIX: Add bounds checking and ensure valid split
         let split_idx = (self.len() as f64 * train_ratio).floor() as usize;
+
+        // Ensure split creates non-empty sets
+        let split_idx = split_idx.max(1).min(self.len() - 1);
 
         let train = TrainingDataset {
             features: self.features[..split_idx].to_vec(),

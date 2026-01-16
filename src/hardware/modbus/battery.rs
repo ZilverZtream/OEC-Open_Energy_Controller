@@ -70,22 +70,44 @@ impl ModbusBattery {
         register_map: &dyn RegisterMap,
     ) -> Result<BatteryCapabilities> {
         // Read max charge power
+        // SAFETY FIX: Log warnings when Modbus reads fail instead of silently using defaults
         let max_charge_regs = client
             .read_holding_registers(register_map.max_charge_power_register(), 1)
             .await
-            .unwrap_or_else(|_| vec![5000]); // Default 5kW if read fails
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    error = %e,
+                    register = register_map.max_charge_power_register(),
+                    "Failed to read max_charge_power from Modbus, using default 5kW"
+                );
+                vec![5000]
+            });
 
         // Read max discharge power
         let max_discharge_regs = client
             .read_holding_registers(register_map.max_discharge_power_register(), 1)
             .await
-            .unwrap_or_else(|_| vec![5000]); // Default 5kW if read fails
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    error = %e,
+                    register = register_map.max_discharge_power_register(),
+                    "Failed to read max_discharge_power from Modbus, using default 5kW"
+                );
+                vec![5000]
+            });
 
         // Read capacity
         let capacity_regs = client
             .read_holding_registers(register_map.capacity_register(), 1)
             .await
-            .unwrap_or_else(|_| vec![10000]); // Default 10kWh if read fails
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    error = %e,
+                    register = register_map.capacity_register(),
+                    "Failed to read capacity from Modbus, using default 10kWh - CRITICAL: Verify battery specs!"
+                );
+                vec![10000]
+            });
 
         let max_charge_kw = parser::parse_u16(&max_charge_regs) as f64 / 1000.0;
         let max_discharge_kw = parser::parse_u16(&max_discharge_regs) as f64 / 1000.0;
