@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Grid connection status and limits
@@ -119,6 +120,33 @@ impl GridTariff {
     }
 }
 
+/// Aggregated grid import/export statistics over a time window.
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GridStatistics {
+    /// Total imported energy in kWh.
+    pub total_import_kwh: f64,
+    /// Total exported energy in kWh.
+    pub total_export_kwh: f64,
+    /// Average import power in kW.
+    pub average_import_kw: f64,
+    /// Average export power in kW.
+    pub average_export_kw: f64,
+    /// Number of samples included.
+    pub sample_count: u32,
+    /// Start of the statistics window.
+    pub window_start: DateTime<Utc>,
+    /// End of the statistics window.
+    pub window_end: DateTime<Utc>,
+}
+
+impl GridStatistics {
+    /// Returns net imported energy (import - export) in kWh.
+    pub fn net_import_kwh(&self) -> f64 {
+        self.total_import_kwh - self.total_export_kwh
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +191,20 @@ mod tests {
         let cost = tariff.calculate_cost(1.0, 1.0, 10);
         // (1.0 * 1.2 + 0.42) * 1.25 = 2.025 SEK
         assert!((cost - 2.025).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_grid_statistics_net_import() {
+        let stats = GridStatistics {
+            total_import_kwh: 12.5,
+            total_export_kwh: 3.0,
+            average_import_kw: 1.2,
+            average_export_kw: 0.4,
+            sample_count: 10,
+            window_start: Utc::now(),
+            window_end: Utc::now(),
+        };
+
+        assert!((stats.net_import_kwh() - 9.5).abs() < f64::EPSILON);
     }
 }

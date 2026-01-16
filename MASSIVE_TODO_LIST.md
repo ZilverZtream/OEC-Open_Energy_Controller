@@ -1312,6 +1312,12 @@
 - [x] Integrate inverter endpoints with auth layer
 - [x] Add OpenAPI documentation for inverter endpoints
 
+### Grid & Weather Endpoints
+- [x] Implement grid status, limits, and statistics handlers with controller data
+- [x] Re-enable grid routes in the v1 router
+- [x] Implement weather forecast handler backed by SMHI client
+- [x] Re-enable weather forecast route in the v1 router
+
 ### Schedule Endpoints
 - [ ] Create `src/api/handlers/schedule.rs`
 - [ ] Implement `GET /api/v1/schedule/current` handler

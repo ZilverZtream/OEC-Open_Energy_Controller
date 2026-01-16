@@ -8,11 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    auth::AuthBearer,
-    controller::AppState,
-    forecast::{GeoLocation, WeatherForecast},
-};
+use crate::{auth::AuthBearer, controller::AppState, forecast::GeoLocation};
 
 /// Get weather forecast for a location
 #[derive(Debug, Deserialize)]
@@ -22,18 +18,39 @@ pub struct WeatherQuery {
 }
 
 pub async fn get_weather_forecast(
-    State(_st): State<AppState>,
+    State(st): State<AppState>,
     AuthBearer(_): AuthBearer,
-    Query(_q): Query<WeatherQuery>,
+    Query(q): Query<WeatherQuery>,
 ) -> impl IntoResponse {
-    // TODO: Implement once BatteryController has get_weather_forecast method
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(ErrorResponse {
-            error: "Method not yet implemented".to_string(),
-        }),
-    )
-        .into_response()
+    let (latitude, longitude) = match (q.latitude, q.longitude) {
+        (Some(lat), Some(lon)) => (lat, lon),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "latitude and longitude are required".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let location = GeoLocation {
+        latitude,
+        longitude,
+        name: None,
+    };
+
+    match st.controller.get_weather_forecast(location).await {
+        Ok(forecast) => (StatusCode::OK, Json(forecast)).into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Debug, Serialize)]
