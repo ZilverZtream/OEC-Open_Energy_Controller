@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub fn router(state: AppState, cfg: &Config) -> Router {
-    use crate::api::{ev_charger, inverter};
+    use crate::api::{battery, ev_charger, grid, inverter, weather};
 
     Router::new()
         .route("/status", get(get_status))
@@ -25,6 +25,13 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
         .route("/devices", get(list_devices))
         .route("/simulation/step", post(simulation_step))
         .route("/healthz", get(healthz))
+        // Battery routes
+        .route("/battery/state", get(battery::get_battery_state))
+        .route("/battery/capabilities", get(battery::get_battery_capabilities))
+        .route("/battery/health", get(battery::get_battery_health))
+        .route("/battery/power", post(battery::set_battery_power))
+        .route("/battery/history", get(battery::get_battery_history))
+        .route("/battery/statistics", get(battery::get_battery_statistics))
         // EV Charger routes
         .route("/ev-charger/state", get(ev_charger::get_charger_state))
         .route("/ev-charger/current", post(ev_charger::set_charging_current))
@@ -37,6 +44,12 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
         .route("/inverter/export-limit", post(inverter::set_export_limit))
         .route("/inverter/production", get(inverter::get_production_history))
         .route("/inverter/efficiency", get(inverter::get_efficiency_stats))
+        // Grid routes
+        .route("/grid/status", get(grid::get_grid_status))
+        .route("/grid/limits", get(grid::get_grid_limits))
+        .route("/grid/statistics", get(grid::get_grid_statistics))
+        // Weather routes
+        .route("/weather/forecast", get(weather::get_weather_forecast))
         .with_state(state)
         .layer(crate::auth::auth_layer(cfg.auth.token.clone()))
 }
