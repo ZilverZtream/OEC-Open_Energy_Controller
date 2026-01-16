@@ -158,8 +158,12 @@ impl SimulatedEvCharger {
         st.power_w = 0.0;
     }
 
-    /// Simulate charging progress (updates vehicle SoC)
+    /// Simulate charging progress with realistic CC/CV curve
     /// Should be called periodically during charging
+    ///
+    /// Implements:
+    /// - Constant Current (CC) phase: full power until ~80% SoC
+    /// - Constant Voltage (CV) phase: power tapers off to 100%
     pub async fn simulate_charging_step(&self, duration_seconds: u64) {
         let mut st = self.state.write().await;
 
@@ -169,26 +173,48 @@ impl SimulatedEvCharger {
 
         st.session_duration_seconds += duration_seconds;
 
-        // Calculate energy delivered in this step
-        let duration_hours = duration_seconds as f64 / 3600.0;
-        let energy_kwh = (st.power_w / 1000.0) * duration_hours;
-        st.energy_delivered_kwh += energy_kwh;
-
-        // Update vehicle SoC (assume 60 kWh battery)
+        // Vehicle battery parameters
         const VEHICLE_BATTERY_KWH: f64 = 60.0;
         const CHARGING_EFFICIENCY: f64 = 0.90;
+        const CC_TO_CV_THRESHOLD: f64 = 80.0; // Switch to CV phase at 80% SoC
 
         if let Some(soc) = st.vehicle_soc_percent {
+            // Determine charging phase and adjust power accordingly
+            let effective_power_w = if soc < CC_TO_CV_THRESHOLD {
+                // Constant Current (CC) phase - full power
+                st.power_w
+            } else {
+                // Constant Voltage (CV) phase - power tapers linearly
+                // From 100% power at 80% SoC to 10% power at 100% SoC
+                let cv_progress = (soc - CC_TO_CV_THRESHOLD) / (100.0 - CC_TO_CV_THRESHOLD);
+                let power_factor = 1.0 - (0.9 * cv_progress); // 100% -> 10%
+                st.power_w * power_factor
+            };
+
+            // Calculate energy delivered in this step
+            let duration_hours = duration_seconds as f64 / 3600.0;
+            let energy_kwh = (effective_power_w / 1000.0) * duration_hours;
+            st.energy_delivered_kwh += energy_kwh;
+
+            // Update vehicle SoC
             let effective_energy = energy_kwh * CHARGING_EFFICIENCY;
             let soc_increase = (effective_energy / VEHICLE_BATTERY_KWH) * 100.0;
             st.vehicle_soc_percent = Some((soc + soc_increase).min(100.0));
 
-            // If fully charged, stop charging
+            // Update current status
             if st.vehicle_soc_percent.unwrap() >= 99.9 {
+                // Fully charged - stop charging
                 st.charging = false;
                 st.status = ChargerStatus::Finishing;
                 st.current_amps = 0.0;
                 st.power_w = 0.0;
+            } else if st.vehicle_soc_percent.unwrap() >= CC_TO_CV_THRESHOLD {
+                // In CV phase - reduce current proportionally
+                let cv_progress = (st.vehicle_soc_percent.unwrap() - CC_TO_CV_THRESHOLD)
+                    / (100.0 - CC_TO_CV_THRESHOLD);
+                let power_factor = 1.0 - (0.9 * cv_progress);
+                st.current_amps = st.current_amps * power_factor;
+                st.power_w = effective_power_w;
             }
         }
     }

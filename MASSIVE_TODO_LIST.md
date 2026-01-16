@@ -738,9 +738,9 @@
 - [x] Add temperature simulation (rises during charge/discharge)
 - [x] Add efficiency simulation (losses during power conversion)
 - [x] Add degradation simulation (health decreases with cycles)
-- [ ] Add realistic delays (Modbus response time simulation)
-- [ ] Add random noise to readings (realistic sensor variation)
-- [ ] Implement configurable simulation parameters
+- [x] Add realistic delays (Modbus response time simulation)
+- [x] Add random noise to readings (realistic sensor variation)
+- [x] Implement configurable simulation parameters
 - [x] Add unit tests for state transitions
 - [ ] Add property-based tests (proptest) for invariants
 - [x] Document simulation assumptions
@@ -751,7 +751,7 @@
 - [x] Implement `Inverter` trait
 - [x] Add AC/DC conversion simulation
 - [x] Add efficiency curve simulation
-- [ ] Add temperature simulation
+- [x] Add temperature simulation
 - [x] Add unit tests
 
 ### Simulated EV Charger Implementation
@@ -759,7 +759,7 @@
 - [x] Create `SimulatedEvCharger` struct
 - [x] Implement `EvCharger` trait
 - [x] Add vehicle connection/disconnection simulation
-- [ ] Add charge curve simulation (CC/CV phases)
+- [x] Add charge curve simulation (CC/CV phases)
 - [x] Add unit tests
 
 ### Simulation Time Control
