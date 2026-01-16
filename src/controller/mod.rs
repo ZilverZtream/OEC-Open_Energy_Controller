@@ -35,6 +35,7 @@ impl AppState {
             max_discharge_kw: cfg.battery.max_discharge_kw,
             efficiency: cfg.battery.efficiency,
             degradation_per_cycle: cfg.battery.degradation_per_cycle,
+            chemistry: crate::domain::BatteryChemistry::LiFePO4,
         };
         let initial = BatteryState {
             soc_percent: cfg.battery.initial_soc_percent,
@@ -42,6 +43,7 @@ impl AppState {
             voltage_v: 48.0,
             temperature_c: 25.0,
             health_percent: 100.0,
+            status: crate::domain::BatteryStatus::Idle,
         };
 
         #[cfg(feature = "sim")]

@@ -105,11 +105,11 @@ impl Default for InferenceEngine {
 }
 
 /// Batch Prediction
-pub struct BatchPredictor<M: MLModel> {
+pub struct BatchPredictor<M: MLModel + 'static> {
     model: Arc<M>,
 }
 
-impl<M: MLModel> BatchPredictor<M> {
+impl<M: MLModel + 'static> BatchPredictor<M> {
     pub fn new(model: M) -> Self {
         Self {
             model: Arc::new(model),

@@ -16,53 +16,47 @@ use crate::{
 
 /// Get current grid connection status
 pub async fn get_grid_status(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
 ) -> impl IntoResponse {
-    match st.controller.get_grid_status().await {
-        Ok(status) => (StatusCode::OK, Json(status)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to get grid status: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has get_grid_status method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 /// Get grid limits and tariff information
 pub async fn get_grid_limits(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
 ) -> impl IntoResponse {
-    match st.controller.get_grid_limits().await {
-        Ok(limits) => (StatusCode::OK, Json(limits)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to get grid limits: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has get_grid_limits method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 /// Get grid import/export statistics
 pub async fn get_grid_statistics(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
 ) -> impl IntoResponse {
-    match st.controller.get_grid_statistics().await {
-        Ok(stats) => (StatusCode::OK, Json(stats)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("Failed to get grid statistics: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has get_grid_statistics method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 #[derive(Debug, Serialize)]

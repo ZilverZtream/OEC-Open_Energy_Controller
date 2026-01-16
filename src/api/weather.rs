@@ -22,26 +22,18 @@ pub struct WeatherQuery {
 }
 
 pub async fn get_weather_forecast(
-    State(st): State<AppState>,
+    State(_st): State<AppState>,
     AuthBearer(_): AuthBearer,
-    Query(q): Query<WeatherQuery>,
+    Query(_q): Query<WeatherQuery>,
 ) -> impl IntoResponse {
-    let location = GeoLocation {
-        latitude: q.latitude.unwrap_or(59.3293), // Default to Stockholm
-        longitude: q.longitude.unwrap_or(18.0686),
-        name: Some("Stockholm".to_string()),
-    };
-
-    match st.controller.get_weather_forecast(location).await {
-        Ok(forecast) => (StatusCode::OK, Json(forecast)).into_response(),
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            Json(ErrorResponse {
-                error: format!("Failed to fetch weather forecast: {}", e),
-            }),
-        )
-            .into_response(),
-    }
+    // TODO: Implement once BatteryController has get_weather_forecast method
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse {
+            error: "Method not yet implemented".to_string(),
+        }),
+    )
+        .into_response()
 }
 
 #[derive(Debug, Serialize)]
