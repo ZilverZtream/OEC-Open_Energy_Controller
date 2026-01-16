@@ -1283,11 +1283,11 @@
 - [ ] Add integration tests
 
 ### Battery State Endpoints
-- [ ] Create `src/api/handlers/battery.rs`
-- [ ] Implement `GET /api/v1/battery/state` handler (current state)
-- [ ] Implement `GET /api/v1/battery/history` handler (time range query)
-- [ ] Implement `GET /api/v1/battery/statistics` handler (aggregated stats)
-- [ ] Add query parameters (start_time, end_time, interval)
+- [x] Create `src/api/handlers/battery.rs`
+- [x] Implement `GET /api/v1/battery/state` handler (current state)
+- [x] Implement `GET /api/v1/battery/history` handler (time range query)
+- [x] Implement `GET /api/v1/battery/statistics` handler (aggregated stats)
+- [x] Add query parameters (start_time, end_time, interval)
 - [ ] Add pagination for history endpoint
 - [ ] Add OpenAPI documentation
 - [ ] Add integration tests
@@ -2319,13 +2319,13 @@
 - [ ] Document design decisions
 
 ### Architecture Decision Records (ADRs)
-- [ ] Create `docs/ADR/001-rust-choice.md`
-- [ ] Create `docs/ADR/002-database-choice.md`
-- [ ] Create `docs/ADR/003-optimization-strategy.md`
-- [ ] Create `docs/ADR/004-modbus-abstraction.md`
-- [ ] Create `docs/ADR/005-forecast-approach.md`
-- [ ] Create `docs/ADR/006-ml-framework.md`
-- [ ] Create ADR template
+- [x] Create `docs/ADR/001-rust-choice.md`
+- [x] Create `docs/ADR/002-database-choice.md`
+- [x] Create `docs/ADR/003-optimization-strategy.md`
+- [x] Create `docs/ADR/004-modbus-abstraction.md`
+- [x] Create `docs/ADR/005-forecast-approach.md`
+- [x] Create `docs/ADR/006-ml-framework.md`
+- [x] Create ADR template
 - [ ] Document ADR process
 
 ### API Documentation
