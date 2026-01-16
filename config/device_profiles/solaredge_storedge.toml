@@ -1,0 +1,65 @@
+# SolarEdge StorEdge Battery Configuration Profile
+
+[device]
+manufacturer = "SolarEdge"
+model = "StorEdge"
+device_type = "Battery"
+protocol = "ModbusTCP"
+
+[modbus]
+default_port = 1502
+unit_id = 1
+timeout_ms = 5000
+retry_count = 3
+
+[registers]
+# State of Charge (read-only)
+soc_address = 62852
+soc_scale = 1.0
+soc_unit = "percent"
+
+# Battery Power (read/write)
+power_address = 62850
+power_scale = 1.0
+power_unit = "watts"
+power_signed = true
+
+# Voltage (read-only)
+voltage_address = 62854
+voltage_scale = 0.01
+voltage_unit = "volts"
+
+# Temperature (read-only)
+temperature_address = 62855
+temperature_scale = 0.1
+temperature_unit = "celsius"
+
+# Health/State of Health (read-only)
+health_address = 62853
+health_scale = 1.0
+health_unit = "percent"
+
+# Max Charge Power (read-only)
+max_charge_power_address = 62860
+max_charge_power_scale = 1.0
+max_charge_power_unit = "watts"
+
+# Max Discharge Power (read-only)
+max_discharge_power_address = 62861
+max_discharge_power_scale = 1.0
+max_discharge_power_unit = "watts"
+
+[capabilities]
+capacity_kwh = 10.0
+max_charge_kw = 5.0
+max_discharge_kw = 5.0
+efficiency = 0.94
+chemistry = "NMC"
+nominal_voltage = 400.0
+degradation_per_cycle = 0.015
+
+[limits]
+min_soc = 10.0
+max_soc = 90.0
+min_temperature = -10.0
+max_temperature = 50.0

@@ -1,0 +1,65 @@
+# Huawei Luna2000 Battery Configuration Profile
+
+[device]
+manufacturer = "Huawei"
+model = "Luna2000"
+device_type = "Battery"
+protocol = "ModbusTCP"
+
+[modbus]
+default_port = 502
+unit_id = 1
+timeout_ms = 5000
+retry_count = 3
+
+[registers]
+# State of Charge (read-only)
+soc_address = 37760
+soc_scale = 0.1
+soc_unit = "percent"
+
+# Battery Power (read/write)
+power_address = 37765
+power_scale = 1.0
+power_unit = "watts"
+power_signed = true
+
+# Voltage (read-only)
+voltage_address = 37766
+voltage_scale = 0.1
+voltage_unit = "volts"
+
+# Temperature (read-only)
+temperature_address = 37780
+temperature_scale = 0.1
+temperature_unit = "celsius"
+
+# Health/State of Health (read-only)
+health_address = 37761
+health_scale = 0.1
+health_unit = "percent"
+
+# Max Charge Power (read-only)
+max_charge_power_address = 47075
+max_charge_power_scale = 1.0
+max_charge_power_unit = "watts"
+
+# Max Discharge Power (read-only)
+max_discharge_power_address = 47076
+max_discharge_power_scale = 1.0
+max_discharge_power_unit = "watts"
+
+[capabilities]
+capacity_kwh = 15.0
+max_charge_kw = 5.0
+max_discharge_kw = 5.0
+efficiency = 0.95
+chemistry = "LiFePO4"
+nominal_voltage = 48.0
+degradation_per_cycle = 0.01
+
+[limits]
+min_soc = 10.0
+max_soc = 95.0
+min_temperature = -10.0
+max_temperature = 50.0
