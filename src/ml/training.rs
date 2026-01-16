@@ -157,6 +157,44 @@ impl ModelTrainer {
         Ok(ValidationMetrics::new(mae, rmse, mape, r2))
     }
 
+    /// Train a RandomForest model using SmartCore
+    ///
+    /// This method trains a RandomForest regressor with conservative settings
+    /// optimized for Raspberry Pi deployment.
+    #[cfg(feature = "ml")]
+    pub fn train_random_forest(
+        &self,
+        dataset: &TrainingDataset,
+    ) -> Result<super::smartcore::SmartcoreRandomForest> {
+        if dataset.is_empty() {
+            anyhow::bail!("Cannot train on empty dataset");
+        }
+
+        // Convert Features to Vec<Vec<f64>> for SmartCore
+        let x_data: Vec<Vec<f64>> = dataset
+            .features
+            .iter()
+            .map(|f| f.features.clone()) // Uses cyclical features
+            .collect();
+
+        let y = dataset.targets.clone();
+
+        // Train using conservative settings for Pi
+        let params = super::smartcore::SmartcoreRandomForest::default_parameters();
+
+        // Get feature names from first feature vector
+        let feature_names = if !dataset.features.is_empty() {
+            dataset.features[0].feature_names.clone()
+        } else {
+            vec![]
+        };
+
+        let model = super::smartcore::SmartcoreRandomForest::train(&x_data, &y, params, feature_names)
+            .map_err(|e| anyhow::anyhow!("Training failed: {}", e))?;
+
+        Ok(model)
+    }
+
     /// Train a simple linear regression model
     pub fn train_linear_regression(
         &self,

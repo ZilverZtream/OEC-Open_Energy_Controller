@@ -137,6 +137,28 @@ impl FeatureExtractor {
     }
 }
 
+impl TimeSeriesFeatures {
+    /// Convert features to cyclical vector representation
+    ///
+    /// This method converts time-based features to cyclical (sin/cos) encoding
+    /// to preserve temporal continuity (e.g., hour 23 is close to hour 0).
+    pub fn to_cyclical_vector(&self) -> Vec<f64> {
+        let pi = std::f64::consts::PI;
+        vec![
+            // Hour (0-23) mapped to circle
+            (2.0 * pi * self.hour_of_day as f64 / 24.0).sin(),
+            (2.0 * pi * self.hour_of_day as f64 / 24.0).cos(),
+
+            // Month (1-12) mapped to circle
+            (2.0 * pi * (self.month - 1) as f64 / 12.0).sin(),
+            (2.0 * pi * (self.month - 1) as f64 / 12.0).cos(),
+
+            // Weekend binary
+            if self.is_weekend { 1.0 } else { 0.0 }
+        ]
+    }
+}
+
 /// Create cyclical features from time components
 /// This preserves temporal continuity (e.g., hour 23 is close to hour 0)
 pub fn create_cyclical_features(timestamp: DateTime<FixedOffset>) -> Vec<f64> {
@@ -424,5 +446,94 @@ mod tests {
 
         // Distance should be small (much less than linear encoding would give)
         assert!(dist < 0.5, "Cyclical encoding should preserve hour continuity");
+    }
+
+    #[test]
+    fn test_to_cyclical_vector() {
+        let features = TimeSeriesFeatures {
+            hour_of_day: 12, // Noon
+            day_of_week: 3,
+            day_of_month: 15,
+            month: 6, // June
+            is_weekend: false,
+            is_holiday: false,
+            temperature_c: Some(20.0),
+            cloud_cover_percent: Some(50.0),
+            wind_speed_ms: Some(5.0),
+            season: 2,
+            day_length_hours: 16.0,
+        };
+
+        let cyclical = features.to_cyclical_vector();
+
+        // Should return 5 features: hour_sin, hour_cos, month_sin, month_cos, is_weekend
+        assert_eq!(cyclical.len(), 5);
+
+        // Hour 12 should map to (sin(pi), cos(pi)) = (0, -1)
+        assert!((cyclical[0] - 0.0).abs() < 0.01); // sin(pi) ≈ 0
+        assert!((cyclical[1] - (-1.0)).abs() < 0.01); // cos(pi) ≈ -1
+
+        // Month 6 (June, 0-indexed as 5) should map to cyclical
+        // (2π * 5 / 12) = 5π/6
+        let month_angle = 2.0 * std::f64::consts::PI * 5.0 / 12.0;
+        assert!((cyclical[2] - month_angle.sin()).abs() < 0.01);
+        assert!((cyclical[3] - month_angle.cos()).abs() < 0.01);
+
+        // Weekend should be 0 (false)
+        assert_eq!(cyclical[4], 0.0);
+    }
+
+    #[test]
+    fn test_to_cyclical_vector_weekend() {
+        let features = TimeSeriesFeatures {
+            hour_of_day: 0,
+            day_of_week: 5, // Saturday
+            day_of_month: 15,
+            month: 1,
+            is_weekend: true,
+            is_holiday: false,
+            temperature_c: None,
+            cloud_cover_percent: None,
+            wind_speed_ms: None,
+            season: 0,
+            day_length_hours: 8.0,
+        };
+
+        let cyclical = features.to_cyclical_vector();
+
+        // Weekend should be 1 (true)
+        assert_eq!(cyclical[4], 1.0);
+    }
+
+    #[test]
+    fn test_to_cyclical_vector_hour_continuity() {
+        // Test that hour 23 and hour 0 are close in cyclical space
+        let features_23 = TimeSeriesFeatures {
+            hour_of_day: 23,
+            day_of_week: 3,
+            day_of_month: 15,
+            month: 6,
+            is_weekend: false,
+            is_holiday: false,
+            temperature_c: None,
+            cloud_cover_percent: None,
+            wind_speed_ms: None,
+            season: 2,
+            day_length_hours: 16.0,
+        };
+
+        let features_0 = TimeSeriesFeatures {
+            hour_of_day: 0,
+            ..features_23.clone()
+        };
+
+        let cyc_23 = features_23.to_cyclical_vector();
+        let cyc_0 = features_0.to_cyclical_vector();
+
+        // Calculate Euclidean distance between hour encodings (first 2 features)
+        let dist = ((cyc_23[0] - cyc_0[0]).powi(2) + (cyc_23[1] - cyc_0[1]).powi(2)).sqrt();
+
+        // Distance should be very small (hours are adjacent in time)
+        assert!(dist < 0.3, "Hour 23 and 0 should be close in cyclical space, distance: {}", dist);
     }
 }
