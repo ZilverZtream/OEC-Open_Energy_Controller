@@ -44,6 +44,35 @@ pub enum BatteryStatus {
     Offline,
 }
 
+impl std::str::FromStr for BatteryStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "charging" => Ok(BatteryStatus::Charging),
+            "discharging" => Ok(BatteryStatus::Discharging),
+            "idle" => Ok(BatteryStatus::Idle),
+            "standby" => Ok(BatteryStatus::Standby),
+            "fault" => Ok(BatteryStatus::Fault),
+            "offline" => Ok(BatteryStatus::Offline),
+            _ => Err(format!("Unknown battery status: {}", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for BatteryStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BatteryStatus::Charging => write!(f, "charging"),
+            BatteryStatus::Discharging => write!(f, "discharging"),
+            BatteryStatus::Idle => write!(f, "idle"),
+            BatteryStatus::Standby => write!(f, "standby"),
+            BatteryStatus::Fault => write!(f, "fault"),
+            BatteryStatus::Offline => write!(f, "offline"),
+        }
+    }
+}
+
 /// Battery chemistry type
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]

@@ -130,7 +130,8 @@ pub async fn add_device(
         port: Some(request.port),
         config: request.config,
         discovered_at: chrono::Utc::now(),
-        last_seen: Some(chrono::Utc::now()),
+        last_seen: chrono::Utc::now(),
+        enabled: true,
     };
 
     // Insert into database

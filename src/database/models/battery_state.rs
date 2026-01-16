@@ -33,10 +33,6 @@ impl BatteryStateRow {
             temperature_c: self.temperature_c,
             health_percent: self.health_percent.unwrap_or(100.0),
             status,
-            timestamp: chrono::DateTime::from_naive_utc_and_offset(
-                self.timestamp.naive_utc(),
-                chrono::FixedOffset::east_opt(0).unwrap()
-            ),
         }
     }
 

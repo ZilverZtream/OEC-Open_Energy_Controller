@@ -170,12 +170,22 @@ impl Battery for ModbusBattery {
             health_task,
         )?;
 
+        // Determine status based on power
+        let status = if power > 10.0 {
+            crate::domain::battery::BatteryStatus::Charging
+        } else if power < -10.0 {
+            crate::domain::battery::BatteryStatus::Discharging
+        } else {
+            crate::domain::battery::BatteryStatus::Idle
+        };
+
         Ok(BatteryState {
             soc_percent: soc,
             power_w: power,
             voltage_v: voltage,
             temperature_c: temperature,
             health_percent: health,
+            status,
         })
     }
 
