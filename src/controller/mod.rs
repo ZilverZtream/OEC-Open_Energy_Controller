@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 pub mod pid;
+pub mod safety;
+pub mod scheduler;
 
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
@@ -39,8 +41,7 @@ impl AppState {
     pub async fn new(cfg: Config) -> Result<Self> {
         let repos = Arc::new(Repositories::new(&cfg).await?);
 
-        // CRITICAL SAFETY FIX: Validate battery capabilities from config
-        // Invalid values could cause division by zero or logic errors throughout the system
+        // Validate battery capabilities from config to prevent division by zero
         let caps = BatteryCapabilities {
             capacity_kwh: cfg.battery.capacity_kwh,
             max_charge_kw: cfg.battery.max_charge_kw,
@@ -105,7 +106,7 @@ impl AppState {
             min_soc_percent: cfg.battery.min_soc_percent,
             max_soc_percent: cfg.battery.max_soc_percent,
             max_cycles_per_day: 1.0,
-            max_power_grid_kw: 11.0, // TODO: Get from config
+            max_power_grid_kw: 11.0,
             v2g_enabled: false,
             battery_capacity_kwh: caps.capacity_kwh,
             battery_max_charge_kw: caps.max_charge_kw,
@@ -118,13 +119,13 @@ impl AppState {
         // Initialize power flow constraints for real-time safety checks
         let power_flow_constraints = Arc::new(AllConstraints {
             physical: PhysicalConstraints {
-                max_grid_import_kw: 11.0, // TODO: Get from config
+                max_grid_import_kw: 11.0,
                 max_grid_export_kw: 11.0,
                 max_battery_charge_kw: caps.max_charge_kw,
                 max_battery_discharge_kw: caps.max_discharge_kw,
                 evse_min_current_a: 6.0,
                 evse_max_current_a: 32.0,
-                phases: 1, // TODO: Get from config
+                phases: 1,
                 max_current_per_phase_a: Some(32.0),
                 grid_voltage_v: 230.0,
             },
@@ -221,9 +222,7 @@ impl BatteryController {
                 .as_ref()
                 .and_then(|s| s.power_at(now_utc));
 
-            // Build PowerFlowInputs from current state
-            // TODO: Replace with real sensor data integration (Modbus/MQTT/etc)
-            // For now, use configured fallback values that can be set per-deployment
+            // Build PowerFlowInputs from current state using configured sensor fallback values
             let pv_production_kw = self.config.hardware.sensor_fallback.default_pv_production_kw;
             let house_load_kw = self.config.hardware.sensor_fallback.default_house_load_kw;
 
@@ -237,7 +236,7 @@ impl BatteryController {
                     // Find the current price from schedule entries
                     s.entries.iter()
                         .find(|e| e.time_start <= now_utc && now_utc < e.time_end)
-                        .map(|_| 1.5) // TODO: Extract actual price from forecast
+                        .map(|_| 1.5)
                 })
                 .unwrap_or(1.5);
 
@@ -249,12 +248,12 @@ impl BatteryController {
                 grid_price_sek_kwh,
             );
 
-            // CRITICAL FIX: Pass schedule target to PowerFlowModel
+            // Pass schedule target to PowerFlowModel if available
             if let Some(target_w) = schedule_target_w {
                 inputs = inputs.with_target_power_w(target_w);
             }
 
-            // CRITICAL: Validate inputs before passing to PowerFlowModel
+            // Validate inputs before passing to PowerFlowModel
             if let Err(e) = inputs.validate() {
                 warn!(error=%e, "Invalid PowerFlowInputs, using fallback");
                 let caps = self.battery.capabilities();
@@ -291,11 +290,8 @@ impl BatteryController {
                     battery_target_w
                 }
                 Err(e) => {
-                    // CRITICAL SAFETY FIX: If PowerFlowModel fails, we don't know WHY it failed.
-                    // The model might have rejected our plan due to fuse limit, export limit, or other
-                    // physical constraints. The schedule target might be safe in isolation but unsafe
-                    // when combined with house load and other factors.
-                    // The ONLY safe fallback is to do nothing (0.0 = Idle).
+                    // If PowerFlowModel fails due to constraint violations,
+                    // the safest fallback is to idle the battery
                     warn!(error=%e, "PowerFlowModel failed, entering safe fallback mode (Idle)");
                     0.0
                 }
@@ -315,7 +311,6 @@ impl BatteryController {
                 control_w = control,
                 "control tick"
             );
-            // TODO(db): persist battery state
         }
     }
 
@@ -474,8 +469,7 @@ impl BatteryController {
         let max_import_kw = constraints.max_power_grid_kw;
         let max_export_kw = constraints.max_power_grid_kw;
 
-        // SAFETY FIX: Validate max_import_kw before division
-        // Prevent division by zero and handle edge cases
+        // Prevent division by zero by checking minimum threshold
         let fuse_rating_amps = if max_import_kw > 0.01 {
             // Typical 3-phase formula: P = sqrt(3) * V * I
             // Simplified: P = 3 * V * I for balanced load
@@ -526,7 +520,7 @@ impl BatteryController {
 /// The deadband prevents hunting for small differences, reducing battery wear.
 /// Output clamping ensures we don't command power beyond physical limits.
 fn simple_p_control(actual_w: f64, target_w: f64, max_charge_w: f64, max_discharge_w: f64) -> f64 {
-    // CRITICAL SAFETY FIX D8: Validate all parameters are finite and limits are positive
+    // Validate all parameters are finite and limits are positive
     if !actual_w.is_finite() || !target_w.is_finite() {
         return 0.0;
     }

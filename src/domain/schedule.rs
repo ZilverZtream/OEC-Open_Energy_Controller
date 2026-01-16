@@ -88,8 +88,7 @@ impl Schedule {
 
         let mut previous_end: Option<DateTime<Utc>> = None;
         for (index, entry) in self.entries.iter().enumerate() {
-            // CRITICAL SAFETY FIX: Validate target_power_w is finite
-            // NaN or Inf power commands would cause undefined behavior in the controller
+            // Validate target_power_w is finite
             if !entry.target_power_w.is_finite() {
                 return Err(ScheduleValidationError::InvalidEntryRange { index });
             }
@@ -148,7 +147,6 @@ mod tests {
     use chrono::TimeZone;
 
     fn make_schedule(entries: Vec<ScheduleEntry>) -> Schedule {
-        // SAFETY FIX: Handle empty entries gracefully
         let now = Utc::now();
         let valid_from = entries.first().map(|e| e.time_start).unwrap_or(now);
         let valid_until = entries.last().map(|e| e.time_end).unwrap_or(now);

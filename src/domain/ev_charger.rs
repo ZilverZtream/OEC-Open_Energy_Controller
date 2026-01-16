@@ -204,7 +204,6 @@ impl SimulatedEvCharger {
             st.vehicle_soc_percent = Some(new_soc);
 
             // Update current status
-            // SAFETY FIX: Use the calculated value instead of unwrap()
             if new_soc >= 99.9 {
                 // Fully charged - stop charging
                 st.charging = false;

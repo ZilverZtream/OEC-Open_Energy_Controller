@@ -23,8 +23,7 @@ impl OptimizationStrategy for DynamicProgrammingOptimizer {
             anyhow::bail!("no price points available");
         }
 
-        // CRITICAL SAFETY FIX: Validate all prices are finite before entering DP loop
-        // NaN or Inf prices would cause undefined behavior in min_by comparisons
+        // Validate all prices are finite before entering DP loop
         for (i, price_point) in forecast.prices.iter().take(n).enumerate() {
             if !price_point.price_sek_per_kwh.is_finite() {
                 anyhow::bail!(
@@ -141,8 +140,7 @@ fn simulate_action(
         Action::Idle => 0.0,
     };
 
-    // CRITICAL FIX: Calculate actual SoC change based on energy and capacity
-    // This is the "Physics Hallucination" fix
+    // Calculate actual SoC change based on energy and capacity
     let energy_kwh = if target_power_w > 0.0 {
         // Charging: power delivered over 1 hour with efficiency loss
         (target_power_w / 1000.0) * 1.0 * efficiency
@@ -174,9 +172,7 @@ fn simulate_action(
         cost += cycle_penalty;
     }
 
-    // CRITICAL SAFETY FIX: Validate cost is finite
-    // If energy_kwh or price became NaN due to bad sensor reading or upstream bug,
-    // the min_by comparison would be undefined
+    // Validate cost is finite to prevent undefined behavior in min_by comparisons
     if !cost.is_finite() {
         anyhow::bail!(
             "Cost calculation resulted in non-finite value: energy_kwh={}, price={}, cost={}",
