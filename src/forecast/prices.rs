@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use chrono::{DateTime, Datelike, FixedOffset, Local};
+use chrono::{DateTime, Datelike, Utc};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
@@ -18,7 +18,7 @@ pub trait PriceForecaster: Send + Sync {
 pub struct ElprisetJustNuPriceForecaster {
     base_url: String,
     client: reqwest::Client,
-    cache: Arc<RwLock<Option<(DateTime<FixedOffset>, PriceArea, Vec<PricePoint>)>>>,
+    cache: Arc<RwLock<Option<(DateTime<Utc>, PriceArea, Vec<PricePoint>)>>>,
     ttl: Duration,
 }
 
@@ -42,7 +42,7 @@ impl ElprisetJustNuPriceForecaster {
     }
 
     fn url_for_today(&self, area: PriceArea) -> String {
-        let now = Local::now().fixed_offset();
+        let now = Utc::now();
         let date = now.date_naive();
         format!(
             "{}/api/v1/prices/{:04}/{:02}-{:02}_{}.json",
@@ -62,7 +62,7 @@ impl PriceForecaster for ElprisetJustNuPriceForecaster {
             let c = self.cache.read().await;
             if let Some((ts, a, v)) = &*c {
                 if *a == area
-                    && (Local::now().fixed_offset() - *ts).num_seconds() < self.ttl.as_secs() as i64
+                    && (Utc::now() - *ts).num_seconds() < self.ttl.as_secs() as i64
                 {
                     return Ok(v.clone());
                 }
@@ -93,7 +93,7 @@ impl PriceForecaster for ElprisetJustNuPriceForecaster {
             .collect::<Vec<_>>();
 
         let mut c = self.cache.write().await;
-        *c = Some((Local::now().fixed_offset(), area, points.clone()));
+        *c = Some((Utc::now(), area, points.clone()));
         Ok(points)
     }
 }
@@ -102,8 +102,8 @@ impl PriceForecaster for ElprisetJustNuPriceForecaster {
 struct RawPrice {
     #[serde(rename = "SEK_per_kWh")]
     sek_per_kwh: f64,
-    time_start: DateTime<FixedOffset>,
-    time_end: DateTime<FixedOffset>,
+    time_start: DateTime<Utc>,
+    time_end: DateTime<Utc>,
 }
 
 /// Nordpool API client for day-ahead electricity prices
@@ -111,7 +111,7 @@ struct RawPrice {
 pub struct NordpoolPriceForecaster {
     base_url: String,
     client: reqwest::Client,
-    cache: Arc<RwLock<Option<(DateTime<FixedOffset>, PriceArea, Vec<PricePoint>)>>>,
+    cache: Arc<RwLock<Option<(DateTime<Utc>, PriceArea, Vec<PricePoint>)>>>,
     ttl: Duration,
     eur_to_sek_rate: f64, // Exchange rate for EUR to SEK conversion
 }
@@ -140,7 +140,7 @@ impl NordpoolPriceForecaster {
 
     /// Fetch day-ahead prices from Nordpool
     async fn fetch_day_ahead_prices(&self, area: PriceArea) -> Result<Vec<PricePoint>> {
-        let now = Local::now().fixed_offset();
+        let now = Utc::now();
         let date = now.date_naive();
 
         // Nordpool API URL for day-ahead prices
@@ -220,7 +220,7 @@ impl PriceForecaster for NordpoolPriceForecaster {
             let c = self.cache.read().await;
             if let Some((ts, a, v)) = &*c {
                 if *a == area
-                    && (Local::now().fixed_offset() - *ts).num_seconds() < self.ttl.as_secs() as i64
+                    && (Utc::now() - *ts).num_seconds() < self.ttl.as_secs() as i64
                 {
                     return Ok(v.clone());
                 }
@@ -232,7 +232,7 @@ impl PriceForecaster for NordpoolPriceForecaster {
 
         // Update cache
         let mut c = self.cache.write().await;
-        *c = Some((Local::now().fixed_offset(), area, points.clone()));
+        *c = Some((Utc::now(), area, points.clone()));
 
         Ok(points)
     }
@@ -253,9 +253,9 @@ struct NordpoolData {
 #[derive(Debug, Deserialize)]
 struct NordpoolRow {
     #[serde(rename = "StartTime")]
-    start_time: DateTime<FixedOffset>,
+    start_time: DateTime<Utc>,
     #[serde(rename = "EndTime")]
-    end_time: DateTime<FixedOffset>,
+    end_time: DateTime<Utc>,
     #[serde(rename = "Columns")]
     columns: Option<Vec<NordpoolColumn>>,
 }

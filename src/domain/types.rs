@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use chrono::{DateTime, FixedOffset, Datelike, Timelike};
+use chrono::{DateTime, Utc, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Sub, Mul};
@@ -86,20 +86,20 @@ impl fmt::Display for Duration {
 }
 
 /// Timestamp helper type for specific points in time
-/// Wraps DateTime<FixedOffset> with convenience methods
+/// Wraps DateTime<Utc> with convenience methods
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Timestamp(pub DateTime<FixedOffset>);
+pub struct Timestamp(pub DateTime<Utc>);
 
 impl Timestamp {
     /// Create a timestamp from the current time
     pub fn now() -> Self {
-        Self(chrono::Utc::now().fixed_offset())
+        Self(chrono::Utc::now())
     }
 
     /// Create a timestamp from a Unix timestamp (seconds since epoch)
     pub fn from_unix(secs: i64) -> Option<Self> {
         chrono::DateTime::from_timestamp(secs, 0)
-            .map(|dt| Self(dt.fixed_offset()))
+            .map(|dt| Self(dt))
     }
 
     /// Get the Unix timestamp (seconds since epoch)
@@ -158,18 +158,18 @@ impl Timestamp {
     }
 
     /// Get the inner DateTime
-    pub fn inner(&self) -> DateTime<FixedOffset> {
+    pub fn inner(&self) -> DateTime<Utc> {
         self.0
     }
 }
 
-impl From<DateTime<FixedOffset>> for Timestamp {
-    fn from(dt: DateTime<FixedOffset>) -> Self {
+impl From<DateTime<Utc>> for Timestamp {
+    fn from(dt: DateTime<Utc>) -> Self {
         Self(dt)
     }
 }
 
-impl From<Timestamp> for DateTime<FixedOffset> {
+impl From<Timestamp> for DateTime<Utc> {
     fn from(ts: Timestamp) -> Self {
         ts.0
     }
@@ -464,24 +464,24 @@ impl std::str::FromStr for PriceArea {
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PricePoint {
-    pub time_start: DateTime<FixedOffset>,
-    pub time_end: DateTime<FixedOffset>,
+    pub time_start: DateTime<Utc>,
+    pub time_end: DateTime<Utc>,
     pub price_sek_per_kwh: f64,
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsumptionPoint {
-    pub time_start: DateTime<FixedOffset>,
-    pub time_end: DateTime<FixedOffset>,
+    pub time_start: DateTime<Utc>,
+    pub time_end: DateTime<Utc>,
     pub load_kw: f64,
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductionPoint {
-    pub time_start: DateTime<FixedOffset>,
-    pub time_end: DateTime<FixedOffset>,
+    pub time_start: DateTime<Utc>,
+    pub time_end: DateTime<Utc>,
     pub pv_kw: f64,
 }
 
@@ -489,7 +489,7 @@ pub struct ProductionPoint {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Forecast24h {
     pub area: PriceArea,
-    pub generated_at: DateTime<FixedOffset>,
+    pub generated_at: DateTime<Utc>,
     pub prices: Vec<PricePoint>,
     pub consumption: Vec<ConsumptionPoint>,
     pub production: Vec<ProductionPoint>,

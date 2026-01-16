@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -8,9 +8,9 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schedule {
     pub id: Uuid,
-    pub created_at: DateTime<FixedOffset>,
-    pub valid_from: DateTime<FixedOffset>,
-    pub valid_until: DateTime<FixedOffset>,
+    pub created_at: DateTime<Utc>,
+    pub valid_from: DateTime<Utc>,
+    pub valid_until: DateTime<Utc>,
     pub entries: Vec<ScheduleEntry>,
     pub optimizer_version: String,
 }
@@ -18,8 +18,8 @@ pub struct Schedule {
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleEntry {
-    pub time_start: DateTime<FixedOffset>,
-    pub time_end: DateTime<FixedOffset>,
+    pub time_start: DateTime<Utc>,
+    pub time_end: DateTime<Utc>,
     pub target_power_w: f64,
     pub reason: String,
 }
@@ -28,8 +28,8 @@ pub struct ScheduleEntry {
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleInterval {
-    pub time_start: DateTime<FixedOffset>,
-    pub time_end: DateTime<FixedOffset>,
+    pub time_start: DateTime<Utc>,
+    pub time_end: DateTime<Utc>,
     pub target_power_w: f64,
 }
 
@@ -57,20 +57,20 @@ pub enum ScheduleValidationError {
     EntryOutOfBounds { index: usize },
     #[error("gap detected between {previous_end} and {next_start}")]
     GapDetected {
-        previous_end: DateTime<FixedOffset>,
-        next_start: DateTime<FixedOffset>,
+        previous_end: DateTime<Utc>,
+        next_start: DateTime<Utc>,
     },
     #[error("overlap detected between {previous_end} and {next_start}")]
     OverlapDetected {
-        previous_end: DateTime<FixedOffset>,
-        next_start: DateTime<FixedOffset>,
+        previous_end: DateTime<Utc>,
+        next_start: DateTime<Utc>,
     },
     #[error("schedule window does not align with entries")]
     WindowMismatch,
 }
 
 impl Schedule {
-    pub fn power_at(&self, t: DateTime<FixedOffset>) -> Option<f64> {
+    pub fn power_at(&self, t: DateTime<Utc>) -> Option<f64> {
         self.entries
             .iter()
             .find(|e| t >= e.time_start && t < e.time_end)
@@ -86,7 +86,7 @@ impl Schedule {
             return Err(ScheduleValidationError::InvalidWindow);
         }
 
-        let mut previous_end: Option<DateTime<FixedOffset>> = None;
+        let mut previous_end: Option<DateTime<Utc>> = None;
         for (index, entry) in self.entries.iter().enumerate() {
             let interval = entry.interval();
             if interval.time_start >= interval.time_end {
@@ -126,7 +126,7 @@ impl Schedule {
         Ok(())
     }
     pub fn next_hours(&self, hours: i64) -> Vec<ScheduleEntry> {
-        let now = chrono::Local::now().fixed_offset();
+        let now = chrono::Utc::now();
         let until = now + chrono::Duration::hours(hours);
         self.entries
             .iter()
@@ -156,8 +156,7 @@ mod tests {
 
     #[test]
     fn validate_accepts_contiguous_entries() {
-        let tz = FixedOffset::east_opt(0).unwrap();
-        let t0 = tz.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let t0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let t1 = t0 + chrono::Duration::hours(1);
         let t2 = t1 + chrono::Duration::hours(1);
 
@@ -181,8 +180,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_gap() {
-        let tz = FixedOffset::east_opt(0).unwrap();
-        let t0 = tz.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let t0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let t1 = t0 + chrono::Duration::hours(1);
         let t2 = t1 + chrono::Duration::hours(1);
         let t3 = t2 + chrono::Duration::hours(1);
@@ -213,8 +211,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_overlap() {
-        let tz = FixedOffset::east_opt(0).unwrap();
-        let t0 = tz.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let t0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let t1 = t0 + chrono::Duration::hours(1);
         let t2 = t1 + chrono::Duration::hours(1);
 
@@ -244,8 +241,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_out_of_bounds_entry() {
-        let tz = FixedOffset::east_opt(0).unwrap();
-        let t0 = tz.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let t0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let t1 = t0 + chrono::Duration::hours(1);
         let t2 = t1 + chrono::Duration::hours(1);
 

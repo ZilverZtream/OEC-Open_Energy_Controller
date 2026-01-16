@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, Local};
+use chrono::Utc;
 use uuid::Uuid;
 
 use super::{Constraints, OptimizationStrategy, SystemState};
@@ -120,7 +120,7 @@ impl OptimizationStrategy for GreedyOptimizer {
         forecast: &Forecast24h,
         constraints: &Constraints,
     ) -> Result<Schedule> {
-        let now: DateTime<FixedOffset> = Local::now().fixed_offset();
+        let now = Utc::now();
 
         if forecast.prices.is_empty() {
             anyhow::bail!("No price points available for optimization");
@@ -180,21 +180,21 @@ mod tests {
     fn test_average_price() {
         let forecast = Forecast24h {
             area: crate::domain::types::PriceArea::SE3,
-            generated_at: Local::now().fixed_offset(),
+            generated_at: Utc::now(),
             prices: vec![
                 crate::domain::types::PricePoint {
-                    time_start: Local::now().fixed_offset(),
-                    time_end: Local::now().fixed_offset() + Duration::hours(1),
+                    time_start: Utc::now(),
+                    time_end: Utc::now() + Duration::hours(1),
                     price_sek_per_kwh: 1.0,
                 },
                 crate::domain::types::PricePoint {
-                    time_start: Local::now().fixed_offset() + Duration::hours(1),
-                    time_end: Local::now().fixed_offset() + Duration::hours(2),
+                    time_start: Utc::now() + Duration::hours(1),
+                    time_end: Utc::now() + Duration::hours(2),
                     price_sek_per_kwh: 2.0,
                 },
                 crate::domain::types::PricePoint {
-                    time_start: Local::now().fixed_offset() + Duration::hours(2),
-                    time_end: Local::now().fixed_offset() + Duration::hours(3),
+                    time_start: Utc::now() + Duration::hours(2),
+                    time_end: Utc::now() + Duration::hours(3),
                     price_sek_per_kwh: 3.0,
                 },
             ],

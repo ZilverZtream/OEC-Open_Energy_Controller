@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone, Timelike};
+use chrono::{Datelike, Utc, TimeZone, Timelike};
 use uuid::Uuid;
 
 use crate::domain::ProductionPoint;
@@ -32,9 +32,8 @@ impl Default for SimpleProductionForecaster {
 #[async_trait]
 impl ProductionForecaster for SimpleProductionForecaster {
     async fn predict_next_24h(&self, _household_id: Uuid) -> Result<Vec<ProductionPoint>> {
-        let now: DateTime<FixedOffset> = Local::now().fixed_offset();
-        let tz = *now.offset();
-        let start = tz
+        let now = Utc::now();
+        let start = Utc
             .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
             .unwrap();
 

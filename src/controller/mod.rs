@@ -2,7 +2,7 @@
 pub mod pid;
 
 use anyhow::{bail, Result};
-use chrono::{DateTime, FixedOffset, Local, Utc};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
@@ -136,15 +136,20 @@ impl BatteryController {
             let state = self.battery.read_state().await?;
             let now_utc = Utc::now();
             self.record_state(now_utc, state.clone()).await;
-            let now: DateTime<FixedOffset> = Local::now().fixed_offset();
             let target_power = self
                 .schedule
                 .read()
                 .await
                 .as_ref()
-                .and_then(|s| s.power_at(now))
+                .and_then(|s| s.power_at(now_utc))
                 .unwrap_or(0.0);
-            let control = simple_p_control(state.power_w, target_power);
+
+            // Get battery capabilities for output clamping
+            let caps = self.battery.capabilities();
+            let max_charge_w = caps.max_charge_kw * 1000.0;
+            let max_discharge_w = caps.max_discharge_kw * 1000.0;
+
+            let control = simple_p_control(state.power_w, target_power, max_charge_w, max_discharge_w);
             self.battery.set_power(control).await?;
             info!(
                 soc_percent = state.soc_percent,
@@ -352,9 +357,31 @@ impl BatteryController {
     }
 }
 
-fn simple_p_control(actual_w: f64, target_w: f64) -> f64 {
+/// Simple P controller with deadband and NaN/Inf protection
+///
+/// The deadband prevents hunting for small differences, reducing battery wear.
+/// Output clamping ensures we don't command power beyond physical limits.
+fn simple_p_control(actual_w: f64, target_w: f64, max_charge_w: f64, max_discharge_w: f64) -> f64 {
+    // NaN/Inf protection: if either input is not finite, return 0
+    if !actual_w.is_finite() || !target_w.is_finite() {
+        return 0.0;
+    }
+
+    let error = target_w - actual_w;
+
+    // Deadband: ignore errors smaller than 50W to prevent hunting
+    const DEADBAND_W: f64 = 50.0;
+    if error.abs() < DEADBAND_W {
+        return target_w;
+    }
+
+    // P control with gain
     let k = 0.5;
-    target_w + (target_w - actual_w) * k
+    let control_w = target_w + error * k;
+
+    // Output clamping to physical limits
+    // Positive = charging, negative = discharging
+    control_w.clamp(-max_discharge_w, max_charge_w)
 }
 
 #[derive(Debug, Clone, Serialize)]

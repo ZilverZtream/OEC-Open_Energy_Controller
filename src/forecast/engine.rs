@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use anyhow::Result;
-use chrono::{DateTime, FixedOffset, Local};
+use chrono::Utc;
 use uuid::Uuid;
 
 use super::{ConsumptionForecaster, PriceForecaster, ProductionForecaster};
@@ -30,16 +30,15 @@ impl ForecastEngine {
         area: PriceArea,
         household_id: Uuid,
     ) -> Result<Forecast24h> {
-        let generated_at: DateTime<FixedOffset> = Local::now().fixed_offset();
-        let prices = self.price_forecaster.predict_next_24h(area).await?;
-        let consumption = self
-            .consumption_forecaster
-            .predict_next_24h(household_id)
-            .await?;
-        let production = self
-            .production_forecaster
-            .predict_next_24h(household_id)
-            .await?;
+        let generated_at = Utc::now();
+
+        // Execute all forecasts concurrently to reduce latency
+        let (prices, consumption, production) = tokio::try_join!(
+            self.price_forecaster.predict_next_24h(area),
+            self.consumption_forecaster.predict_next_24h(household_id),
+            self.production_forecaster.predict_next_24h(household_id)
+        )?;
+
         Ok(Forecast24h {
             area,
             generated_at,

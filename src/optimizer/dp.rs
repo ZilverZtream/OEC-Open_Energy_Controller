@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, Local};
+use chrono::Utc;
 use uuid::Uuid;
 
 use super::{Action, Constraints, OptimizationStrategy, SystemState};
@@ -17,19 +17,21 @@ impl OptimizationStrategy for DynamicProgrammingOptimizer {
         forecast: &Forecast24h,
         constraints: &Constraints,
     ) -> Result<Schedule> {
-        let now: DateTime<FixedOffset> = Local::now().fixed_offset();
+        let now = Utc::now();
         let n = forecast.prices.len().min(24);
         if n == 0 {
             anyhow::bail!("no price points available");
         }
 
         let soc0 = bucket(state.battery.soc_percent);
-        let mut dp = vec![vec![f64::INFINITY; 21]; n + 1];
-        let mut prev = vec![vec![None; 21]; n + 1];
+        // Use 51 states (0-100% in 2% increments) for better granularity
+        const NUM_SOC_STATES: usize = 51;
+        let mut dp = vec![vec![f64::INFINITY; NUM_SOC_STATES]; n + 1];
+        let mut prev = vec![vec![None; NUM_SOC_STATES]; n + 1];
         dp[0][soc0] = 0.0;
 
         for t in 0..n {
-            for soc in 0..21 {
+            for soc in 0..NUM_SOC_STATES {
                 let cur = dp[t][soc];
                 if !cur.is_finite() {
                     continue;
@@ -83,9 +85,12 @@ impl OptimizationStrategy for DynamicProgrammingOptimizer {
     }
 }
 
+/// Convert SoC percentage to discrete bucket
+/// Uses 2% granularity (0-100% -> 0-50 buckets) for better precision
+/// than the previous 5% granularity (0-20 buckets)
 fn bucket(soc_percent: f64) -> usize {
-    let b = (soc_percent.clamp(0.0, 100.0) / 5.0).round() as i64;
-    b.clamp(0, 20) as usize
+    let b = (soc_percent.clamp(0.0, 100.0) / 2.0).round() as i64;
+    b.clamp(0, 50) as usize
 }
 
 fn simulate_action(
@@ -100,14 +105,21 @@ fn simulate_action(
     let mut next = soc_bucket as i64;
     let cycle_penalty = 0.001;
 
-    let mut target_power_w: f64 = match action {
+    // Use actual battery constraints instead of hardcoded values
+    let max_charge_w = constraints.max_power_grid_kw.max(0.1) * 1000.0;
+    let max_discharge_w = constraints.max_power_grid_kw.max(0.1) * 1000.0;
+
+    // Assume a typical battery efficiency (should be passed via constraints in the future)
+    let efficiency = 0.95;
+
+    let target_power_w: f64 = match action {
         Action::Charge => {
             next += 1;
-            2000.0
+            max_charge_w
         }
         Action::Discharge => {
             next -= 1;
-            -2000.0
+            -max_discharge_w
         }
         Action::Idle => {
             0.0
@@ -118,10 +130,17 @@ fn simulate_action(
     let max_b = bucket(constraints.max_soc_percent);
     next = next.clamp(min_b as i64, max_b as i64);
 
-    let max_grid_w = constraints.max_power_grid_kw.max(0.1) * 1000.0;
-    target_power_w = target_power_w.clamp(-max_grid_w, max_grid_w);
+    // Energy calculation with efficiency losses
+    let energy_kwh = if target_power_w > 0.0 {
+        // Charging: account for charging efficiency
+        (target_power_w / 1000.0) * 1.0 * efficiency
+    } else if target_power_w < 0.0 {
+        // Discharging: account for discharge efficiency
+        (target_power_w / 1000.0) * 1.0 / efficiency
+    } else {
+        0.0
+    };
 
-    let energy_kwh = (target_power_w / 1000.0) * 1.0; // 1h step placeholder
     let mut cost = energy_kwh * price;
     if matches!(action, Action::Charge | Action::Discharge) {
         cost += cycle_penalty;

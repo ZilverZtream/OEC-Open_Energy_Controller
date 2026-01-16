@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, Local, TimeZone, Timelike};
+use chrono::{Utc, TimeZone, Timelike};
 use uuid::Uuid;
 
 use crate::domain::ConsumptionPoint;
@@ -16,9 +16,8 @@ pub struct SimpleConsumptionForecaster;
 #[async_trait]
 impl ConsumptionForecaster for SimpleConsumptionForecaster {
     async fn predict_next_24h(&self, _household_id: Uuid) -> Result<Vec<ConsumptionPoint>> {
-        let now: DateTime<FixedOffset> = Local::now().fixed_offset();
-        let tz = *now.offset();
-        let start = tz
+        let now = Utc::now();
+        let start = Utc
             .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
             .unwrap();
 

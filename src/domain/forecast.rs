@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Forecast confidence level
@@ -109,7 +109,7 @@ pub struct Constraints {
     pub min_export_power_w: Option<f64>,
 
     /// EV charging deadline (if applicable)
-    pub ev_deadline: Option<DateTime<FixedOffset>>,
+    pub ev_deadline: Option<DateTime<Utc>>,
 
     /// EV minimum charge level by deadline (%)
     pub ev_min_charge_percent: Option<f64>,
@@ -222,7 +222,7 @@ pub struct PriceForecast {
     pub confidence: ForecastConfidence,
 
     /// Timestamp when forecast was generated
-    pub generated_at: DateTime<FixedOffset>,
+    pub generated_at: DateTime<Utc>,
 
     /// Forecast source (e.g., "nordpool", "ml_model", "persistence")
     pub source: String,
@@ -238,13 +238,13 @@ impl PriceForecast {
         Self {
             points,
             confidence,
-            generated_at: chrono::Utc::now().fixed_offset(),
+            generated_at: chrono::Utc::now(),
             source,
         }
     }
 
     /// Get the price at a specific timestamp using linear interpolation
-    pub fn price_at(&self, timestamp: DateTime<FixedOffset>) -> Option<f64> {
+    pub fn price_at(&self, timestamp: DateTime<Utc>) -> Option<f64> {
         interpolate_value(&self.points, timestamp, |p| p.price_sek_per_kwh)
     }
 
@@ -285,7 +285,7 @@ pub struct ConsumptionForecast {
     pub confidence: ForecastConfidence,
 
     /// Timestamp when forecast was generated
-    pub generated_at: DateTime<FixedOffset>,
+    pub generated_at: DateTime<Utc>,
 
     /// Forecast source (e.g., "ml_model", "historical_average", "persistence")
     pub source: String,
@@ -301,13 +301,13 @@ impl ConsumptionForecast {
         Self {
             points,
             confidence,
-            generated_at: chrono::Utc::now().fixed_offset(),
+            generated_at: chrono::Utc::now(),
             source,
         }
     }
 
     /// Get the consumption at a specific timestamp using linear interpolation
-    pub fn consumption_at(&self, timestamp: DateTime<FixedOffset>) -> Option<f64> {
+    pub fn consumption_at(&self, timestamp: DateTime<Utc>) -> Option<f64> {
         interpolate_value(&self.points, timestamp, |p| p.load_kw)
     }
 
@@ -343,7 +343,7 @@ pub struct ProductionForecast {
     pub confidence: ForecastConfidence,
 
     /// Timestamp when forecast was generated
-    pub generated_at: DateTime<FixedOffset>,
+    pub generated_at: DateTime<Utc>,
 
     /// Forecast source (e.g., "weather_based", "ml_model", "persistence")
     pub source: String,
@@ -359,13 +359,13 @@ impl ProductionForecast {
         Self {
             points,
             confidence,
-            generated_at: chrono::Utc::now().fixed_offset(),
+            generated_at: chrono::Utc::now(),
             source,
         }
     }
 
     /// Get the production at a specific timestamp using linear interpolation
-    pub fn production_at(&self, timestamp: DateTime<FixedOffset>) -> Option<f64> {
+    pub fn production_at(&self, timestamp: DateTime<Utc>) -> Option<f64> {
         interpolate_value(&self.points, timestamp, |p| p.pv_kw)
     }
 
@@ -395,7 +395,7 @@ use crate::domain::types::{ConsumptionPoint, PricePoint, ProductionPoint};
 /// Helper function for linear interpolation between forecast points
 fn interpolate_value<T, F>(
     points: &[T],
-    timestamp: DateTime<FixedOffset>,
+    timestamp: DateTime<Utc>,
     value_fn: F,
 ) -> Option<f64>
 where
@@ -456,33 +456,33 @@ where
 
 /// Trait for types that have time bounds
 trait TimePoint {
-    fn time_start(&self) -> DateTime<FixedOffset>;
-    fn time_end(&self) -> DateTime<FixedOffset>;
+    fn time_start(&self) -> DateTime<Utc>;
+    fn time_end(&self) -> DateTime<Utc>;
 }
 
 impl TimePoint for PricePoint {
-    fn time_start(&self) -> DateTime<FixedOffset> {
+    fn time_start(&self) -> DateTime<Utc> {
         self.time_start
     }
-    fn time_end(&self) -> DateTime<FixedOffset> {
+    fn time_end(&self) -> DateTime<Utc> {
         self.time_end
     }
 }
 
 impl TimePoint for ConsumptionPoint {
-    fn time_start(&self) -> DateTime<FixedOffset> {
+    fn time_start(&self) -> DateTime<Utc> {
         self.time_start
     }
-    fn time_end(&self) -> DateTime<FixedOffset> {
+    fn time_end(&self) -> DateTime<Utc> {
         self.time_end
     }
 }
 
 impl TimePoint for ProductionPoint {
-    fn time_start(&self) -> DateTime<FixedOffset> {
+    fn time_start(&self) -> DateTime<Utc> {
         self.time_start
     }
-    fn time_end(&self) -> DateTime<FixedOffset> {
+    fn time_end(&self) -> DateTime<Utc> {
         self.time_end
     }
 }
