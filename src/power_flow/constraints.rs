@@ -149,7 +149,58 @@ impl AllConstraints {
 
     /// Validate constraints for consistency
     pub fn validate(&self) -> Result<(), String> {
-        // Check physical constraints
+        // CRITICAL SAFETY FIX: Check all constraint values are finite (not NaN or Inf)
+        // NaN/Inf constraints would bypass all safety systems
+
+        // Physical constraints finite checks
+        if !self.physical.max_grid_import_kw.is_finite() {
+            return Err(format!("max_grid_import_kw is not finite: {}", self.physical.max_grid_import_kw));
+        }
+        if !self.physical.max_grid_export_kw.is_finite() {
+            return Err(format!("max_grid_export_kw is not finite: {}", self.physical.max_grid_export_kw));
+        }
+        if !self.physical.max_battery_charge_kw.is_finite() {
+            return Err(format!("max_battery_charge_kw is not finite: {}", self.physical.max_battery_charge_kw));
+        }
+        if !self.physical.max_battery_discharge_kw.is_finite() {
+            return Err(format!("max_battery_discharge_kw is not finite: {}", self.physical.max_battery_discharge_kw));
+        }
+        if !self.physical.evse_min_current_a.is_finite() {
+            return Err(format!("evse_min_current_a is not finite: {}", self.physical.evse_min_current_a));
+        }
+        if !self.physical.evse_max_current_a.is_finite() {
+            return Err(format!("evse_max_current_a is not finite: {}", self.physical.evse_max_current_a));
+        }
+        if !self.physical.grid_voltage_v.is_finite() {
+            return Err(format!("grid_voltage_v is not finite: {}", self.physical.grid_voltage_v));
+        }
+
+        // Safety constraints finite checks
+        if !self.safety.battery_min_soc_percent.is_finite() {
+            return Err(format!("battery_min_soc_percent is not finite: {}", self.safety.battery_min_soc_percent));
+        }
+        if !self.safety.battery_max_soc_percent.is_finite() {
+            return Err(format!("battery_max_soc_percent is not finite: {}", self.safety.battery_max_soc_percent));
+        }
+        if !self.safety.max_battery_cycles_per_day.is_finite() {
+            return Err(format!("max_battery_cycles_per_day is not finite: {}", self.safety.max_battery_cycles_per_day));
+        }
+        if !self.safety.max_battery_temp_c.is_finite() {
+            return Err(format!("max_battery_temp_c is not finite: {}", self.safety.max_battery_temp_c));
+        }
+
+        // Economic constraints finite checks
+        if !self.economic.grid_price_sek_kwh.is_finite() {
+            return Err(format!("grid_price_sek_kwh is not finite: {}", self.economic.grid_price_sek_kwh));
+        }
+        if !self.economic.export_price_sek_kwh.is_finite() {
+            return Err(format!("export_price_sek_kwh is not finite: {}", self.economic.export_price_sek_kwh));
+        }
+        if !self.economic.arbitrage_threshold_sek_kwh.is_finite() {
+            return Err(format!("arbitrage_threshold_sek_kwh is not finite: {}", self.economic.arbitrage_threshold_sek_kwh));
+        }
+
+        // Now check physical constraints ranges
         if self.physical.max_grid_import_kw <= 0.0 {
             return Err("max_grid_import_kw must be positive".to_string());
         }
@@ -166,7 +217,7 @@ impl AllConstraints {
             return Err("evse_max_current_a must be >= evse_min_current_a".to_string());
         }
 
-        // Check safety constraints
+        // Check safety constraints ranges
         if self.safety.battery_min_soc_percent < 0.0 || self.safety.battery_min_soc_percent > 100.0 {
             return Err("battery_min_soc_percent must be between 0 and 100".to_string());
         }
@@ -175,7 +226,7 @@ impl AllConstraints {
             return Err("battery_max_soc_percent must be >= battery_min_soc_percent".to_string());
         }
 
-        // Check economic objectives
+        // Check economic objectives ranges
         if self.economic.grid_price_sek_kwh < 0.0 {
             return Err("grid_price_sek_kwh cannot be negative".to_string());
         }

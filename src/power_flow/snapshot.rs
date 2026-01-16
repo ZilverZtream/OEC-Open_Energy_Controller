@@ -92,10 +92,15 @@ impl PowerSnapshot {
     /// Calculate self-sufficiency ratio (0-1)
     pub fn self_sufficiency_ratio(&self) -> f64 {
         let total_load = self.house_kw + self.ev_kw + self.battery_kw.max(0.0);
-        if total_load <= 0.0 {
+        // CRITICAL SAFETY FIX D10: Use a reasonable threshold to avoid division edge cases
+        // Very small loads (< 10W = 0.01kW) should be treated as zero load
+        const MIN_LOAD_THRESHOLD_KW: f64 = 0.01;
+        if total_load < MIN_LOAD_THRESHOLD_KW {
+            // No meaningful load, consider 0% self-sufficient (can't be self-sufficient with no load)
             return 0.0;
         }
-        (self.pv_kw / total_load).min(1.0)
+        // Calculate ratio and clamp to [0, 1]
+        (self.pv_kw / total_load).clamp(0.0, 1.0)
     }
 }
 

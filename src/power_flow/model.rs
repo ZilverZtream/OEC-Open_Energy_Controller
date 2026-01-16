@@ -10,6 +10,7 @@ const EV_MEDIUM_URGENCY_THRESHOLD: f64 = 0.3; // Above this: use PV + some grid
 // Battery SoC Management Thresholds
 const BATTERY_LOW_SOC_MULTIPLIER: f64 = 0.7;  // When to charge from cheap grid (70% of max_soc)
 const BATTERY_MIN_POWER_THRESHOLD_KW: f64 = 0.1; // Minimum power difference to act on
+const BATTERY_HYSTERESIS_PERCENT: f64 = 2.0;  // SoC buffer to prevent oscillation at min_soc
 
 // Grid Price Arbitrage Thresholds
 const CHEAP_GRID_PRICE_MULTIPLIER: f64 = 0.5; // Charge when price < threshold * 0.5
@@ -166,9 +167,11 @@ impl PowerFlowModel {
                     target_kw.min(self.constraints.physical.max_battery_charge_kw)
                 }
             } else if target_kw < 0.0 {
-                // Discharging: respect max discharge rate and min SoC
-                if soc <= min_soc {
-                    0.0 // Already at min SoC, don't discharge
+                // Discharging: respect max discharge rate and min SoC with hysteresis
+                // CRITICAL FIX: Add hysteresis buffer to prevent oscillation
+                // Only discharge if SoC is above min_soc + hysteresis buffer
+                if soc <= min_soc + BATTERY_HYSTERESIS_PERCENT {
+                    0.0 // Too close to min SoC, don't discharge (prevents oscillation)
                 } else {
                     // Respect max discharge rate
                     let available_discharge_kw = self.constraints.physical.max_battery_discharge_kw;
@@ -191,7 +194,8 @@ impl PowerFlowModel {
         }
 
         // Case 2: House needs power and price is high - discharge battery
-        if house_deficit_kw > 0.0 && soc > min_soc {
+        // CRITICAL FIX: Add hysteresis buffer to prevent oscillation
+        if house_deficit_kw > 0.0 && soc > min_soc + BATTERY_HYSTERESIS_PERCENT {
             let price = inputs.grid_price_sek_kwh;
             let threshold = self.constraints.economic.arbitrage_threshold_sek_kwh;
 

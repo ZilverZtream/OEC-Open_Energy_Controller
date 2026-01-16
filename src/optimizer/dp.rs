@@ -23,6 +23,18 @@ impl OptimizationStrategy for DynamicProgrammingOptimizer {
             anyhow::bail!("no price points available");
         }
 
+        // CRITICAL SAFETY FIX: Validate all prices are finite before entering DP loop
+        // NaN or Inf prices would cause undefined behavior in min_by comparisons
+        for (i, price_point) in forecast.prices.iter().take(n).enumerate() {
+            if !price_point.price_sek_per_kwh.is_finite() {
+                anyhow::bail!(
+                    "Price at index {} is not finite: {}",
+                    i,
+                    price_point.price_sek_per_kwh
+                );
+            }
+        }
+
         let soc0 = bucket(state.battery.soc_percent);
         // Use 51 states (0-100% in 2% increments) for better granularity
         const NUM_SOC_STATES: usize = 51;
@@ -160,6 +172,18 @@ fn simulate_action(
     let mut cost = energy_kwh * price;
     if matches!(action, Action::Charge | Action::Discharge) {
         cost += cycle_penalty;
+    }
+
+    // CRITICAL SAFETY FIX: Validate cost is finite
+    // If energy_kwh or price became NaN due to bad sensor reading or upstream bug,
+    // the min_by comparison would be undefined
+    if !cost.is_finite() {
+        anyhow::bail!(
+            "Cost calculation resulted in non-finite value: energy_kwh={}, price={}, cost={}",
+            energy_kwh,
+            price,
+            cost
+        );
     }
 
     Ok((next as usize, cost, target_power_w))
