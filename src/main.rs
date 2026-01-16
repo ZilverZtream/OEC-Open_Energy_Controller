@@ -12,6 +12,7 @@ mod ml;
 mod modbus;
 mod ocpp;
 mod optimizer;
+mod power_flow;
 mod repo;
 mod telemetry;
 

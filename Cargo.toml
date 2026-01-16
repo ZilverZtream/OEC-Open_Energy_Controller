@@ -15,7 +15,7 @@ discovery = ["mdns-sd", "trust-dns-resolver", "pnet"]
 metrics = ["prometheus", "axum-prometheus", "dep:metrics", "metrics-exporter-prometheus"]
 swagger = ["utoipa", "utoipa-swagger-ui"]
 optimization = ["good_lp", "minilp", "ndarray", "nalgebra", "statrs", "noisy_float"]
-ml = ["onnxruntime", "linfa", "linfa-linear", "linfa-trees", "smartcore", "polars"]
+ml = ["smartcore", "polars"]
 ocpp = ["tokio-tungstenite"]
 security = ["argon2", "jsonwebtoken", "ring"]
 utils = ["derive_more"]
@@ -110,10 +110,12 @@ utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"], optional
 utoipa-swagger-ui = { version = "8", features = ["axum"], optional = true }
 
 # Machine Learning
-onnxruntime = { version = "0.0.14", optional = true }
-linfa = { version = "0.7", optional = true }
-linfa-linear = { version = "0.7", optional = true }
-linfa-trees = { version = "0.7", optional = true }
+# Temporarily disabled - requires network access during build
+# onnxruntime = { version = "0.0.14", optional = true }
+# Temporarily disabled due to ndarray compatibility issues
+# linfa = { version = "0.7", optional = true }
+# linfa-linear = { version = "0.7", optional = true }
+# linfa-trees = { version = "0.7", optional = true }
 smartcore = { version = "0.3", optional = true }
 polars = { version = "0.36", features = ["lazy", "temporal", "parquet"], optional = true }
 
