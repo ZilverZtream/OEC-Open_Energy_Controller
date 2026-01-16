@@ -24,11 +24,18 @@ pub struct ScheduleEntry {
 
 impl Schedule {
     pub fn power_at(&self, t: DateTime<FixedOffset>) -> Option<f64> {
-        self.entries.iter().find(|e| t >= e.time_start && t < e.time_end).map(|e| e.target_power_w)
+        self.entries
+            .iter()
+            .find(|e| t >= e.time_start && t < e.time_end)
+            .map(|e| e.target_power_w)
     }
     pub fn next_hours(&self, hours: i64) -> Vec<ScheduleEntry> {
         let now = chrono::Local::now().fixed_offset();
         let until = now + chrono::Duration::hours(hours);
-        self.entries.iter().filter(|e| e.time_end > now && e.time_start < until).cloned().collect()
+        self.entries
+            .iter()
+            .filter(|e| e.time_end > now && e.time_start < until)
+            .cloned()
+            .collect()
     }
 }

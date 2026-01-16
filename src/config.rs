@@ -1,5 +1,8 @@
 use anyhow::Result;
-use figment::{providers::{Env, Format, Toml}, Figment};
+use figment::{
+    providers::{Env, Format, Toml},
+    Figment,
+};
 use serde::Deserialize;
 use std::net::SocketAddr;
 
@@ -14,7 +17,10 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct ServerConfig { pub host: String, pub port: u16 }
+pub struct ServerConfig {
+    pub host: String,
+    pub port: u16,
+}
 impl ServerConfig {
     pub fn socket_addr(&self) -> Result<SocketAddr> {
         Ok(format!("{}:{}", self.host, self.port).parse()?)
@@ -22,7 +28,9 @@ impl ServerConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AuthConfig { pub token: String }
+pub struct AuthConfig {
+    pub token: String,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ControllerConfig {
@@ -51,7 +59,9 @@ pub struct PricesConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct DbConfig { pub url: String }
+pub struct DbConfig {
+    pub url: String,
+}
 
 impl Config {
     pub fn load() -> Result<Self> {

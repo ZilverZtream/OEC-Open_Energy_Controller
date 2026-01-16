@@ -3,17 +3,24 @@ use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, Local};
 use uuid::Uuid;
 
-use crate::domain::{Forecast24h, Schedule, ScheduleEntry};
 use super::{Action, Constraints, OptimizationStrategy, SystemState};
+use crate::domain::{Forecast24h, Schedule, ScheduleEntry};
 
 pub struct DynamicProgrammingOptimizer;
 
 #[async_trait]
 impl OptimizationStrategy for DynamicProgrammingOptimizer {
-    async fn optimize(&self, state: &SystemState, forecast: &Forecast24h, constraints: &Constraints) -> Result<Schedule> {
+    async fn optimize(
+        &self,
+        state: &SystemState,
+        forecast: &Forecast24h,
+        constraints: &Constraints,
+    ) -> Result<Schedule> {
         let now: DateTime<FixedOffset> = Local::now().fixed_offset();
         let n = forecast.prices.len().min(24);
-        if n == 0 { anyhow::bail!("no price points available"); }
+        if n == 0 {
+            anyhow::bail!("no price points available");
+        }
 
         let soc0 = bucket(state.battery.soc_percent);
         let mut dp = vec![vec![f64::INFINITY; 21]; n + 1];
@@ -23,9 +30,12 @@ impl OptimizationStrategy for DynamicProgrammingOptimizer {
         for t in 0..n {
             for soc in 0..21 {
                 let cur = dp[t][soc];
-                if !cur.is_finite() { continue; }
+                if !cur.is_finite() {
+                    continue;
+                }
                 for action in [Action::Charge, Action::Discharge, Action::Idle] {
-                    let (next_soc, cost, target_power_w) = simulate_action(soc, action, forecast, t, constraints)?;
+                    let (next_soc, cost, target_power_w) =
+                        simulate_action(soc, action, forecast, t, constraints)?;
                     let new_cost = cur + cost;
                     if new_cost < dp[t + 1][next_soc] {
                         dp[t + 1][next_soc] = new_cost;
@@ -35,14 +45,19 @@ impl OptimizationStrategy for DynamicProgrammingOptimizer {
             }
         }
 
-        let (mut best_soc, _) = dp[n].iter().enumerate()
-            .min_by(|a,b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i,v)| (i,*v)).unwrap();
+        let (mut best_soc, _) = dp[n]
+            .iter()
+            .enumerate()
+            .min_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, v)| (i, *v))
+            .unwrap();
 
         let mut entries = Vec::with_capacity(n);
         for t in (1..=n).rev() {
-            let (psoc, action, target_power_w) = prev[t][best_soc].ok_or_else(|| anyhow::anyhow!("backtrack failed"))?;
-            let p = &forecast.prices[t-1];
+            let (psoc, action, target_power_w) = prev[t][best_soc]
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("backtrack failed"))?;
+            let p = &forecast.prices[t - 1];
             entries.push(ScheduleEntry {
                 time_start: p.time_start,
                 time_end: p.time_end,
@@ -82,13 +97,21 @@ fn simulate_action(
     let price = forecast.prices[t].price_sek_per_kwh;
 
     let mut next = soc_bucket as i64;
-    let mut target_power_w = 0.0;
+    let mut target_power_w: f64 = 0.0;
     let cycle_penalty = 0.001;
 
     match action {
-        Action::Charge => { next += 1; target_power_w = 2000.0; }
-        Action::Discharge => { next -= 1; target_power_w = -2000.0; }
-        Action::Idle => { target_power_w = 0.0; }
+        Action::Charge => {
+            next += 1;
+            target_power_w = 2000.0;
+        }
+        Action::Discharge => {
+            next -= 1;
+            target_power_w = -2000.0;
+        }
+        Action::Idle => {
+            target_power_w = 0.0;
+        }
     }
 
     let min_b = bucket(constraints.min_soc_percent);
@@ -100,7 +123,9 @@ fn simulate_action(
 
     let energy_kwh = (target_power_w / 1000.0) * 1.0; // 1h step placeholder
     let mut cost = energy_kwh * price;
-    if matches!(action, Action::Charge | Action::Discharge) { cost += cycle_penalty; }
+    if matches!(action, Action::Charge | Action::Discharge) {
+        cost += cycle_penalty;
+    }
 
     Ok((next as usize, cost, target_power_w))
 }

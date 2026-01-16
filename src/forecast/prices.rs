@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, Local, Datelike};
+use chrono::{DateTime, Datelike, FixedOffset, Local};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
@@ -24,12 +24,20 @@ pub struct ElprisetJustNuPriceForecaster {
 impl ElprisetJustNuPriceForecaster {
     pub fn new(base_url: String, ttl: Duration) -> Result<Self> {
         let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_static("open-energy-controller/0.2"));
+        headers.insert(
+            USER_AGENT,
+            HeaderValue::from_static("open-energy-controller/0.2"),
+        );
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .default_headers(headers)
             .build()?;
-        Ok(Self { base_url, client, cache: Arc::new(RwLock::new(None)), ttl })
+        Ok(Self {
+            base_url,
+            client,
+            cache: Arc::new(RwLock::new(None)),
+            ttl,
+        })
     }
 
     fn url_for_today(&self, area: PriceArea) -> String {
@@ -52,14 +60,21 @@ impl PriceForecaster for ElprisetJustNuPriceForecaster {
         {
             let c = self.cache.read().await;
             if let Some((ts, a, v)) = &*c {
-                if *a == area && (Local::now().fixed_offset() - *ts).num_seconds() < self.ttl.as_secs() as i64 {
+                if *a == area
+                    && (Local::now().fixed_offset() - *ts).num_seconds() < self.ttl.as_secs() as i64
+                {
                     return Ok(v.clone());
                 }
             }
         }
 
         let url = self.url_for_today(area);
-        let resp = self.client.get(url).send().await.context("price GET failed")?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .context("price GET failed")?;
         let status = resp.status();
         let body = resp.text().await.context("price read failed")?;
         if !status.is_success() {
@@ -67,11 +82,14 @@ impl PriceForecaster for ElprisetJustNuPriceForecaster {
         }
 
         let raw: Vec<RawPrice> = serde_json::from_str(&body).context("price JSON parse failed")?;
-        let points = raw.into_iter().map(|r| PricePoint {
-            time_start: r.time_start,
-            time_end: r.time_end,
-            price_sek_per_kwh: r.sek_per_kwh,
-        }).collect::<Vec<_>>();
+        let points = raw
+            .into_iter()
+            .map(|r| PricePoint {
+                time_start: r.time_start,
+                time_end: r.time_end,
+                price_sek_per_kwh: r.sek_per_kwh,
+            })
+            .collect::<Vec<_>>();
 
         let mut c = self.cache.write().await;
         *c = Some((Local::now().fixed_offset(), area, points.clone()));

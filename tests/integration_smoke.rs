@@ -1,2 +1,4 @@
 #[test]
-fn smoke(){ assert!(true); }
+fn smoke() {
+    assert!(true);
+}

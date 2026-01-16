@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, Local, Timelike, TimeZone, Datelike};
+use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone, Timelike};
 use uuid::Uuid;
 
 use crate::domain::ProductionPoint;
@@ -19,7 +19,12 @@ pub struct SimpleProductionForecaster {
 
 impl Default for SimpleProductionForecaster {
     fn default() -> Self {
-        Self { peak_kw: 3.5, sunrise: 8.0, sunset: 16.0, cloud_factor: 0.75 }
+        Self {
+            peak_kw: 3.5,
+            sunrise: 8.0,
+            sunset: 16.0,
+            cloud_factor: 0.75,
+        }
     }
 }
 
@@ -28,7 +33,9 @@ impl ProductionForecaster for SimpleProductionForecaster {
     async fn predict_next_24h(&self, _household_id: Uuid) -> Result<Vec<ProductionPoint>> {
         let now: DateTime<FixedOffset> = Local::now().fixed_offset();
         let tz = *now.offset();
-        let start = tz.with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0).unwrap();
+        let start = tz
+            .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
+            .unwrap();
 
         let mut out = Vec::with_capacity(24);
         for h in 0..24 {
@@ -44,7 +51,11 @@ impl ProductionForecaster for SimpleProductionForecaster {
                 (std::f64::consts::PI * x).sin().max(0.0) * self.peak_kw * self.cloud_factor
             };
 
-            out.push(ProductionPoint { time_start: t0, time_end: t1, pv_kw: pv });
+            out.push(ProductionPoint {
+                time_start: t0,
+                time_end: t1,
+                pv_kw: pv,
+            });
         }
         Ok(out)
     }
