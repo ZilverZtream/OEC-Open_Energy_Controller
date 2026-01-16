@@ -748,7 +748,7 @@
 - [x] Add indexes on `devices(device_type)`, `devices(ip)`
 - [x] Create `battery_states` table (id, device_id, timestamp, soc_percent, power_w, voltage_v, temperature_c, health_percent)
 - [x] Add index on `battery_states(device_id, timestamp DESC)`
-- [ ] Add partitioning strategy for `battery_states` (by month)
+- [x] Add partitioning strategy for `battery_states` (by month)
 - [x] Create `inverter_states` table
 - [x] Add index on `inverter_states(device_id, timestamp DESC)`
 - [x] Create `ev_charger_states` table
@@ -763,8 +763,8 @@
 - [x] Create `households` table (id, name, location, grid_connection_kw, created_at)
 - [x] Create `user_preferences` table (id, household_id, min_soc, max_cycles_per_day, prefer_solar, v2g_enabled)
 - [x] Add foreign key constraints
-- [ ] Add triggers for `updated_at` timestamps
-- [ ] Create views for common queries
+- [x] Add triggers for `updated_at` timestamps
+- [x] Create views for common queries
 
 ### Database Models (SQLx)
 - [x] Create `src/database/models/mod.rs`
@@ -1036,23 +1036,23 @@
 - [ ] Add smoke tests with real hardware (optional, gated by feature flag)
 
 ### Modbus Inverter Implementation
-- [ ] Create `src/hardware/modbus/inverter.rs`
-- [ ] Create `ModbusInverter` struct
+- [x] Create `src/hardware/modbus/inverter.rs`
+- [x] Create `ModbusInverter` struct
 - [x] Implement `Inverter` trait
-- [ ] Implement register reads for AC/DC power, efficiency, temperature
-- [ ] Implement mode setting via Modbus writes
-- [ ] Add error handling
+- [x] Implement register reads for AC/DC power, efficiency, temperature
+- [x] Implement mode setting via Modbus writes
+- [x] Add error handling
 - [ ] Add integration tests
 
 ### Device-Specific Implementations
-- [ ] Create `src/hardware/modbus/vendors/mod.rs`
-- [ ] Create `src/hardware/modbus/vendors/huawei.rs`
-- [ ] Implement Huawei Luna2000 specific battery
-- [ ] Create `src/hardware/modbus/vendors/solaredge.rs`
-- [ ] Implement SolarEdge StorEdge specific battery
-- [ ] Create `src/hardware/modbus/vendors/lg.rs`
-- [ ] Implement LG RESU specific battery
-- [ ] Add factory method to select vendor implementation
+- [x] Create `src/hardware/modbus/vendors/mod.rs`
+- [x] Create `src/hardware/modbus/vendors/huawei.rs`
+- [x] Implement Huawei Luna2000 specific battery
+- [x] Create `src/hardware/modbus/vendors/solaredge.rs`
+- [x] Implement SolarEdge StorEdge specific battery
+- [x] Create `src/hardware/modbus/vendors/lg.rs`
+- [x] Implement LG RESU specific battery
+- [x] Add factory method to select vendor implementation
 - [ ] Document supported vendors in README
 
 ### Modbus Factory Implementation
@@ -1095,14 +1095,14 @@
 - [ ] Add integration tests with mock devices
 
 ### mDNS Service Discovery
-- [ ] Create `src/discovery/mdns.rs`
-- [ ] Create `MdnsListener` struct
-- [ ] Implement service browser for `_modbus._tcp.local`
-- [ ] Implement service browser for `_http._tcp.local` (for API devices)
-- [ ] Parse mDNS TXT records for device info
-- [ ] Implement continuous background listening
-- [ ] Add callback for new device discovery
-- [ ] Add callback for device removal
+- [x] Create `src/discovery/mdns.rs`
+- [x] Create `MdnsListener` struct
+- [x] Implement service browser for `_modbus._tcp.local`
+- [x] Implement service browser for `_http._tcp.local` (for API devices)
+- [x] Parse mDNS TXT records for device info
+- [x] Implement continuous background listening
+- [x] Add callback for new device discovery
+- [x] Add callback for device removal
 - [ ] Add integration tests
 - [ ] Document mDNS usage in README
 
@@ -1230,11 +1230,11 @@
 - [x] Add unit tests
 
 ### Forecast Metrics & Evaluation
-- [ ] Create `src/forecast/metrics.rs`
-- [ ] Implement MAE (Mean Absolute Error)
-- [ ] Implement RMSE (Root Mean Square Error)
-- [ ] Implement MAPE (Mean Absolute Percentage Error)
-- [ ] Implement prediction intervals
+- [x] Create `src/forecast/metrics.rs`
+- [x] Implement MAE (Mean Absolute Error)
+- [x] Implement RMSE (Root Mean Square Error)
+- [x] Implement MAPE (Mean Absolute Percentage Error)
+- [x] Implement prediction intervals
 - [ ] Store forecast accuracy metrics in database
 - [ ] Create dashboard view of forecast performance
 - [x] Add unit tests
