@@ -273,18 +273,18 @@
 - [ ] Add workspace members to `Cargo.toml`
 - [x] Create `.env.example` with all required env vars
 - [x] Create `config/development.toml`
-- [ ] Create `config/test.toml`
+- [x] Create `config/test.toml`
 - [x] Create `config/production.toml`
 - [ ] Create `docker-compose.yml` (postgres, grafana, prometheus)
-- [ ] Create `docker-compose.test.yml` (for testing)
+- [x] Create `docker-compose.test.yml` (for testing)
 - [ ] Create `Dockerfile` for production build
-- [ ] Create `Dockerfile.dev` for development
-- [ ] Create `.dockerignore`
-- [ ] Create `rust-toolchain.toml` (pin Rust version)
-- [ ] Create `.cargo/config.toml` (cross-compilation settings for ARM)
-- [ ] Create `sqlx-data.json` placeholder
-- [ ] Create `.editorconfig` for consistent formatting
-- [ ] Create `deny.toml` for cargo-deny security checks
+- [x] Create `Dockerfile.dev` for development
+- [x] Create `.dockerignore`
+- [x] Create `rust-toolchain.toml` (pin Rust version)
+- [x] Create `.cargo/config.toml` (cross-compilation settings for ARM)
+- [x] Create `sqlx-data.json` placeholder
+- [x] Create `.editorconfig` for consistent formatting
+- [x] Create `deny.toml` for cargo-deny security checks
 
 ---
 

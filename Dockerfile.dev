@@ -1,0 +1,16 @@
+FROM rust:1.78.0
+
+WORKDIR /app
+
+COPY Cargo.toml Cargo.lock ./
+
+RUN mkdir -p src \
+    && echo "fn main() {}" > src/main.rs \
+    && cargo build \
+    && rm -rf src
+
+COPY . .
+
+EXPOSE 8080
+
+CMD ["cargo", "run"]
