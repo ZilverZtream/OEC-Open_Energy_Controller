@@ -200,18 +200,20 @@ impl SimulatedEvCharger {
             // Update vehicle SoC
             let effective_energy = energy_kwh * CHARGING_EFFICIENCY;
             let soc_increase = (effective_energy / VEHICLE_BATTERY_KWH) * 100.0;
-            st.vehicle_soc_percent = Some((soc + soc_increase).min(100.0));
+            let new_soc = (soc + soc_increase).min(100.0);
+            st.vehicle_soc_percent = Some(new_soc);
 
             // Update current status
-            if st.vehicle_soc_percent.unwrap() >= 99.9 {
+            // SAFETY FIX: Use the calculated value instead of unwrap()
+            if new_soc >= 99.9 {
                 // Fully charged - stop charging
                 st.charging = false;
                 st.status = ChargerStatus::Finishing;
                 st.current_amps = 0.0;
                 st.power_w = 0.0;
-            } else if st.vehicle_soc_percent.unwrap() >= CC_TO_CV_THRESHOLD {
+            } else if new_soc >= CC_TO_CV_THRESHOLD {
                 // In CV phase - reduce current proportionally
-                let cv_progress = (st.vehicle_soc_percent.unwrap() - CC_TO_CV_THRESHOLD)
+                let cv_progress = (new_soc - CC_TO_CV_THRESHOLD)
                     / (100.0 - CC_TO_CV_THRESHOLD);
                 let power_factor = 1.0 - (0.9 * cv_progress);
                 st.current_amps = st.current_amps * power_factor;

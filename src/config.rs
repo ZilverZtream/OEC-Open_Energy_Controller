@@ -146,6 +146,25 @@ pub struct BatteryConfig {
     #[serde(default = "default_max_soc")]
     #[validate(range(min = 0.0, max = 100.0))]
     pub max_soc_percent: f64,
+
+    /// Battery replacement cost (SEK) - used for cycle penalty calculation
+    #[serde(default = "default_battery_replacement_cost")]
+    #[validate(range(min = 0.0, max = 1000000.0))]
+    pub replacement_cost_sek: f64,
+}
+
+/// Hardware sensor fallback configuration
+#[derive(Debug, Clone, Deserialize, Serialize, Validate)]
+pub struct SensorFallbackConfig {
+    /// Default PV production when sensor unavailable (kW)
+    #[serde(default = "default_pv_production_kw")]
+    #[validate(range(min = 0.0, max = 100.0))]
+    pub default_pv_production_kw: f64,
+
+    /// Default house load when sensor unavailable (kW)
+    #[serde(default = "default_house_load_kw")]
+    #[validate(range(min = 0.0, max = 100.0))]
+    pub default_house_load_kw: f64,
 }
 
 /// Custom validation for BatteryConfig
@@ -184,6 +203,19 @@ pub struct HardwareConfig {
 
     #[serde(default)]
     pub enable_discovery: bool,
+
+    #[serde(default)]
+    #[validate(nested)]
+    pub sensor_fallback: SensorFallbackConfig,
+}
+
+impl Default for SensorFallbackConfig {
+    fn default() -> Self {
+        Self {
+            default_pv_production_kw: default_pv_production_kw(),
+            default_house_load_kw: default_house_load_kw(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -397,6 +429,9 @@ fn default_max_retries() -> u32 { 3 }
 fn default_retry_delay_ms() -> u64 { 1000 }
 fn default_min_soc() -> f64 { 10.0 }
 fn default_max_soc() -> f64 { 95.0 }
+fn default_battery_replacement_cost() -> f64 { 50000.0 } // 50k SEK typical for home battery
+fn default_pv_production_kw() -> f64 { 0.0 } // Conservative: assume no PV if sensor unavailable
+fn default_house_load_kw() -> f64 { 2.0 } // Typical household base load
 fn default_hardware_mode() -> HardwareMode { HardwareMode::Simulated }
 fn default_scan_interval_secs() -> u64 { 300 }
 fn default_db_max_connections() -> u32 { 10 }

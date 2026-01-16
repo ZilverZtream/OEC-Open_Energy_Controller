@@ -23,6 +23,10 @@ pub struct PowerFlowInputs {
     /// Current grid electricity price (SEK/kWh)
     pub grid_price_sek_kwh: f64,
 
+    /// Target battery power from optimizer schedule (W)
+    /// Positive = charge, negative = discharge, None = no schedule
+    pub target_power_w: Option<f64>,
+
     /// Timestamp of this input state
     pub timestamp: DateTime<Utc>,
 }
@@ -112,8 +116,15 @@ impl PowerFlowInputs {
             battery_temp_c,
             ev_state: None,
             grid_price_sek_kwh,
+            target_power_w: None,
             timestamp: Utc::now(),
         }
+    }
+
+    /// Set target battery power from optimizer schedule
+    pub fn with_target_power_w(mut self, target_power_w: f64) -> Self {
+        self.target_power_w = Some(target_power_w);
+        self
     }
 
     /// Set EV state

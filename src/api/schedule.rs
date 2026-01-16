@@ -63,8 +63,16 @@ pub async fn get_current_schedule(
 
         if let Some(schedule_row) = schedule {
             let schedule_json: serde_json::Value = schedule_row.schedule_json.clone();
+            // ERROR HANDLING FIX: Log deserialization errors instead of silently failing
             let intervals: Vec<ScheduleInterval> = serde_json::from_value(schedule_json)
-                .unwrap_or_else(|_| vec![]);
+                .unwrap_or_else(|e| {
+                    tracing::error!(
+                        error = %e,
+                        schedule_id = %schedule_row.id,
+                        "Failed to deserialize schedule JSON, returning empty schedule"
+                    );
+                    vec![]
+                });
 
             let response = ScheduleResponse {
                 id: schedule_row.id,

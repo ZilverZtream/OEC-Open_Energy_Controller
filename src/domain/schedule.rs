@@ -142,8 +142,10 @@ mod tests {
     use chrono::TimeZone;
 
     fn make_schedule(entries: Vec<ScheduleEntry>) -> Schedule {
-        let valid_from = entries.first().unwrap().time_start;
-        let valid_until = entries.last().unwrap().time_end;
+        // SAFETY FIX: Handle empty entries gracefully
+        let now = Utc::now();
+        let valid_from = entries.first().map(|e| e.time_start).unwrap_or(now);
+        let valid_until = entries.last().map(|e| e.time_end).unwrap_or(now);
         Schedule {
             id: Uuid::new_v4(),
             created_at: valid_from,

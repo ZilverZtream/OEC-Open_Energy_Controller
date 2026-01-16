@@ -102,7 +102,13 @@ fn simulate_action(
 ) -> Result<(usize, f64, f64)> {
     let price = forecast.prices[t].price_sek_per_kwh;
 
-    let cycle_penalty = 0.001;
+    // Calculate cycle penalty from battery degradation and replacement cost
+    // cycle_penalty = degradation_per_cycle * replacement_cost (SEK)
+    // This represents the economic cost of wearing out the battery
+    // Example: LiFePO4 with 0.0001 degradation/cycle and 50,000 SEK cost
+    // = 0.0001 * 50000 = 5 SEK per full cycle
+    let cycle_penalty = constraints.battery_degradation_per_cycle
+        * constraints.battery_replacement_cost_sek;
 
     // Use battery physical limits (NOT grid limits!)
     // The constraint is min(grid_limit, battery_limit)
