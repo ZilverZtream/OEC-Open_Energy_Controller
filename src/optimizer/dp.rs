@@ -102,45 +102,55 @@ fn simulate_action(
 ) -> Result<(usize, f64, f64)> {
     let price = forecast.prices[t].price_sek_per_kwh;
 
-    let mut next = soc_bucket as i64;
     let cycle_penalty = 0.001;
 
-    // Use actual battery constraints instead of hardcoded values
-    let max_charge_w = constraints.max_power_grid_kw.max(0.1) * 1000.0;
-    let max_discharge_w = constraints.max_power_grid_kw.max(0.1) * 1000.0;
+    // Use battery physical limits (NOT grid limits!)
+    // The constraint is min(grid_limit, battery_limit)
+    let battery_max_charge_w = constraints.battery_max_charge_kw.max(0.1) * 1000.0;
+    let battery_max_discharge_w = constraints.battery_max_discharge_kw.max(0.1) * 1000.0;
+    let grid_max_w = constraints.max_power_grid_kw.max(0.1) * 1000.0;
 
-    // Assume a typical battery efficiency (should be passed via constraints in the future)
-    let efficiency = 0.95;
+    let max_charge_w = battery_max_charge_w.min(grid_max_w);
+    let max_discharge_w = battery_max_discharge_w.min(grid_max_w);
 
+    // Use configured battery efficiency (NOT hardcoded!)
+    let efficiency = constraints.battery_efficiency.clamp(0.5, 1.0);
+
+    // Calculate target power for each action
     let target_power_w: f64 = match action {
-        Action::Charge => {
-            next += 1;
-            max_charge_w
-        }
-        Action::Discharge => {
-            next -= 1;
-            -max_discharge_w
-        }
-        Action::Idle => {
-            0.0
-        }
+        Action::Charge => max_charge_w,
+        Action::Discharge => -max_discharge_w,
+        Action::Idle => 0.0,
     };
 
-    let min_b = bucket(constraints.min_soc_percent);
-    let max_b = bucket(constraints.max_soc_percent);
-    next = next.clamp(min_b as i64, max_b as i64);
-
-    // Energy calculation with efficiency losses
+    // CRITICAL FIX: Calculate actual SoC change based on energy and capacity
+    // This is the "Physics Hallucination" fix
     let energy_kwh = if target_power_w > 0.0 {
-        // Charging: account for charging efficiency
+        // Charging: power delivered over 1 hour with efficiency loss
         (target_power_w / 1000.0) * 1.0 * efficiency
     } else if target_power_w < 0.0 {
-        // Discharging: account for discharge efficiency
+        // Discharging: power delivered over 1 hour with efficiency loss
         (target_power_w / 1000.0) * 1.0 / efficiency
     } else {
         0.0
     };
 
+    // Calculate SoC change in percentage points
+    let battery_capacity = constraints.battery_capacity_kwh.max(0.1);
+    let soc_change_percent = (energy_kwh / battery_capacity) * 100.0;
+
+    // Calculate number of buckets to move (2% per bucket)
+    let buckets_to_move = (soc_change_percent / 2.0).round() as i64;
+
+    // Apply bucket movement
+    let mut next = (soc_bucket as i64) + buckets_to_move;
+
+    // Clamp to min/max SoC constraints
+    let min_b = bucket(constraints.min_soc_percent);
+    let max_b = bucket(constraints.max_soc_percent);
+    next = next.clamp(min_b as i64, max_b as i64);
+
+    // Cost calculation: energy cost + cycle degradation penalty
     let mut cost = energy_kwh * price;
     if matches!(action, Action::Charge | Action::Discharge) {
         cost += cycle_penalty;

@@ -12,3 +12,4 @@ pub mod model;
 pub use snapshot::PowerSnapshot;
 pub use constraints::AllConstraints;
 pub use inputs::PowerFlowInputs;
+// PowerFlowModel is exported via model module, not re-exported here

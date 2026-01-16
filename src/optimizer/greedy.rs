@@ -54,8 +54,14 @@ impl GreedyOptimizer {
         current_soc: f64,
         constraints: &Constraints,
     ) -> (f64, &str) {
-        let max_charge_w = constraints.max_power_grid_kw * 1000.0;
-        let max_discharge_w = constraints.max_power_grid_kw * 1000.0;
+        // Use battery physical limits (NOT grid limits!)
+        // The constraint is min(grid_limit, battery_limit)
+        let battery_max_charge_w = constraints.battery_max_charge_kw * 1000.0;
+        let battery_max_discharge_w = constraints.battery_max_discharge_kw * 1000.0;
+        let grid_max_w = constraints.max_power_grid_kw * 1000.0;
+
+        let max_charge_w = battery_max_charge_w.min(grid_max_w);
+        let max_discharge_w = battery_max_discharge_w.min(grid_max_w);
 
         // Don't charge if already at max SoC
         if current_soc >= constraints.max_soc_percent {
@@ -96,8 +102,12 @@ impl GreedyOptimizer {
     }
 
     /// Simulate SoC change based on power command
-    fn simulate_soc_change(current_soc: f64, power_w: f64, duration_h: f64, capacity_kwh: f64) -> f64 {
-        let efficiency = 0.95; // 95% round-trip efficiency
+    fn simulate_soc_change(current_soc: f64, power_w: f64, duration_h: f64, capacity_kwh: f64, efficiency: f64) -> f64 {
+        // Prevent division by zero
+        if capacity_kwh <= 0.0 {
+            return current_soc;
+        }
+
         let energy_kwh = (power_w / 1000.0) * duration_h;
 
         let soc_delta = if power_w >= 0.0 {
@@ -129,8 +139,9 @@ impl OptimizationStrategy for GreedyOptimizer {
         let avg_price = Self::average_price(forecast);
         let mut current_soc = state.battery.soc_percent;
 
-        // Assume 10 kWh battery capacity (could be read from battery capabilities)
-        let capacity_kwh = 10.0;
+        // Use actual battery capacity and efficiency from constraints (CRITICAL FIX)
+        let capacity_kwh = constraints.battery_capacity_kwh.max(0.1); // Prevent division by zero
+        let efficiency = constraints.battery_efficiency.clamp(0.5, 1.0);
 
         let mut entries = Vec::new();
 
@@ -154,7 +165,7 @@ impl OptimizationStrategy for GreedyOptimizer {
             });
 
             // Update simulated SoC for next iteration
-            current_soc = Self::simulate_soc_change(current_soc, target_power_w, duration_h, capacity_kwh);
+            current_soc = Self::simulate_soc_change(current_soc, target_power_w, duration_h, capacity_kwh, efficiency);
         }
 
         let valid_from = entries.first().map(|e| e.time_start).unwrap_or(now);
@@ -207,13 +218,14 @@ mod tests {
 
     #[test]
     fn test_soc_simulation() {
+        let efficiency = 0.95;
         // Charging 2kW for 1 hour with 10kWh capacity
-        let new_soc = GreedyOptimizer::simulate_soc_change(50.0, 2000.0, 1.0, 10.0);
+        let new_soc = GreedyOptimizer::simulate_soc_change(50.0, 2000.0, 1.0, 10.0, efficiency);
         // Should increase by approximately 2kWh * 0.95 efficiency / 10kWh * 100 = 19%
         assert!((new_soc - 69.0).abs() < 1.0); // Allow small tolerance
 
         // Discharging 2kW for 1 hour
-        let new_soc = GreedyOptimizer::simulate_soc_change(50.0, -2000.0, 1.0, 10.0);
+        let new_soc = GreedyOptimizer::simulate_soc_change(50.0, -2000.0, 1.0, 10.0, efficiency);
         // Should decrease by approximately 2kWh / 0.95 efficiency / 10kWh * 100 = 21.05%
         assert!((new_soc - 29.0).abs() < 1.0);
     }
