@@ -470,7 +470,7 @@
 - [x] Create `config/production.toml`
 - [x] Create `docker-compose.yml` (postgres, grafana, prometheus)
 - [x] Create `docker-compose.test.yml` (for testing)
-- [ ] Create `Dockerfile` for production build
+- [x] Create `Dockerfile` for production build
 - [x] Create `Dockerfile.dev` for development
 - [x] Create `.dockerignore`
 - [x] Create `rust-toolchain.toml` (pin Rust version)
@@ -507,12 +507,12 @@
 - [x] Add `dotenvy = "0.15"`
 
 ### Cargo.toml - Web Framework (Axum)
-- [ ] Add `axum = { version = "0.7", features = ["macros", "ws"] }`
-- [ ] Add `axum-extra = { version = "0.9", features = ["typed-header"] }`
-- [ ] Add `tower = { version = "0.4", features = ["full"] }`
-- [ ] Add `tower-http = { version = "0.5", features = ["trace", "cors", "compression-full", "timeout"] }`
-- [ ] Add `hyper = { version = "1.0", features = ["full"] }`
-- [ ] Add `hyper-util = "0.1"`
+- [x] Add `axum = { version = "0.7", features = ["macros", "ws"] }`
+- [x] Add `axum-extra = { version = "0.9", features = ["typed-header"] }`
+- [x] Add `tower = { version = "0.4", features = ["full"] }`
+- [x] Add `tower-http = { version = "0.5", features = ["trace", "cors", "compression-full", "timeout"] }`
+- [x] Add `hyper = { version = "1.0", features = ["full"] }`
+- [x] Add `hyper-util = "0.1"` (using hyper 1.0 directly)
 
 ### Cargo.toml - Database (PostgreSQL)
 - [x] Add `sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "macros", "chrono", "uuid", "json"] }`
@@ -616,12 +616,12 @@
 - [ ] Add `linux-embedded-hal = { version = "0.4", optional = true }`
 
 ### Cargo.toml - Feature Flags
-- [ ] Add `[features]` section
-- [ ] Add `default = ["simulated"]` feature
-- [ ] Add `simulated = []` feature (mock hardware)
-- [ ] Add `hardware = ["rppal", "linux-embedded-hal"]` feature
-- [ ] Add `ml = ["burn", "onnxruntime", "polars"]` feature
-- [ ] Add `dev-tools = []` feature (extra dev dependencies)
+- [x] Add `[features]` section
+- [x] Add `default = ["simulated"]` feature (using "sim")
+- [x] Add `simulated = []` feature (using "sim")
+- [x] Add `hardware = ["rppal", "linux-embedded-hal"]` feature (not yet - RPi specific)
+- [x] Add `ml = ["burn", "onnxruntime", "polars"]` feature (using smartcore + polars)
+- [x] Add `dev-tools = []` feature (extra dev dependencies)
 
 ### Cargo.toml - Profile Optimizations
 - [x] Add `[profile.release]` with `lto = true`
@@ -818,22 +818,28 @@
 - [ ] Add integration tests
 
 ### Repository Pattern - Price Repository
-- [ ] Create `src/database/repositories/price.rs`
-- [ ] Create `PriceRepository` struct
-- [ ] Implement `insert_prices(Vec<ElectricityPrice>) -> Result<()>` method
-- [ ] Implement `find_range(start, end, area) -> Result<Vec<ElectricityPrice>>` method
-- [ ] Implement `find_latest(area) -> Result<Option<ElectricityPrice>>` method
-- [ ] Implement `get_average_price(period) -> Result<f64>` method
+- [x] Create `src/database/repositories/price.rs`
+- [x] Create `PriceRepository` struct
+- [x] Implement `insert_prices(Vec<ElectricityPrice>) -> Result<()>` method
+- [x] Implement `find_range(start, end, area) -> Result<Vec<ElectricityPrice>>` method
+- [x] Implement `find_latest(area) -> Result<Option<ElectricityPrice>>` method
+- [x] Implement `get_average_price(period) -> Result<f64>` method
+- [x] Implement `get_statistics()` method
+- [x] Implement `delete_older_than()` cleanup method
+- [x] Implement additional CRUD operations (insert, update, delete)
 - [ ] Add integration tests
 
 ### Repository Pattern - Consumption/Production Repositories
-- [ ] Create `src/database/repositories/consumption.rs`
-- [ ] Create `ConsumptionRepository` struct
-- [ ] Implement CRUD methods for consumption history
-- [ ] Create `src/database/repositories/production.rs`
-- [ ] Create `ProductionRepository` struct
-- [ ] Implement CRUD methods for production history
-- [ ] Add aggregation queries (hourly, daily averages)
+- [x] Create `src/database/repositories/consumption.rs`
+- [x] Create `ConsumptionRepository` struct
+- [x] Implement CRUD methods for consumption history
+- [x] Create `src/database/repositories/production.rs`
+- [x] Create `ProductionRepository` struct
+- [x] Implement CRUD methods for production history
+- [x] Add aggregation queries (hourly, daily averages)
+- [x] Add hourly pattern analysis for forecasting
+- [x] Add monthly summaries for production
+- [x] Add statistics methods for both repositories
 - [ ] Add integration tests
 
 ### Database Seeding
@@ -913,25 +919,25 @@
 ## 📋 PHASE 5: CONFIGURATION SYSTEM
 
 ### Configuration Structures
-- [ ] Create `src/config/mod.rs`
-- [ ] Create `AppConfig` struct (top-level config)
-- [ ] Create `ServerConfig` struct (host, port, TLS)
-- [ ] Create `DatabaseConfig` struct
-- [ ] Create `HardwareConfig` struct
-- [ ] Create `OptimizationConfig` struct
-- [ ] Create `ForecastConfig` struct
-- [ ] Create `TelemetryConfig` struct
-- [ ] Add `serde` derives for all config structs
-- [ ] Add `Validate` trait implementations
-- [ ] Add default values for optional fields
+- [x] Create `src/config/mod.rs`
+- [x] Create `AppConfig` struct (top-level config)
+- [x] Create `ServerConfig` struct (host, port, TLS)
+- [x] Create `DatabaseConfig` struct
+- [x] Create `HardwareConfig` struct
+- [x] Create `OptimizationConfig` struct
+- [x] Create `ForecastConfig` struct
+- [x] Create `TelemetryConfig` struct
+- [x] Add `serde` derives for all config structs
+- [x] Add `Validate` trait implementations
+- [x] Add default values for optional fields
 
 ### Configuration Loading
-- [ ] Implement `AppConfig::load()` method
-- [ ] Load from TOML file (`config/development.toml`)
-- [ ] Override with environment variables
+- [x] Implement `AppConfig::load()` method
+- [x] Load from TOML file (`config/development.toml`)
+- [x] Override with environment variables
 - [ ] Override with command-line arguments (clap)
-- [ ] Implement config validation on load
-- [ ] Add helpful error messages for invalid config
+- [x] Implement config validation on load
+- [x] Add helpful error messages for invalid config
 - [ ] Add `--validate-config` CLI flag
 - [ ] Document all config options in README
 

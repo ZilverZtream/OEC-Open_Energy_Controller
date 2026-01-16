@@ -1,6 +1,6 @@
+#![allow(dead_code)]
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
-use std::time::Instant;
 
 use crate::controller::AppState;
 

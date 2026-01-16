@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Battery API endpoints
 
 use axum::{

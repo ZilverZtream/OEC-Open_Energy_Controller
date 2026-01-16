@@ -1,11 +1,12 @@
+#![allow(dead_code)]
+#![allow(dead_code)]
 //! OCPP Client Implementation
 //!
 //! This module provides a WebSocket-based client for communicating with
 //! EV chargers using the OCPP 1.6 protocol.
 
 use super::messages::*;
-use anyhow::{anyhow, Result};
-use serde_json::Value;
+use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -29,7 +30,7 @@ impl OcppWebSocketClient {
     /// Send a boot notification
     pub async fn send_boot_notification(
         &self,
-        request: BootNotificationRequest,
+        _request: BootNotificationRequest,
     ) -> Result<BootNotificationResponse> {
         // TODO: Implement actual WebSocket communication
         // For now, return a mock response

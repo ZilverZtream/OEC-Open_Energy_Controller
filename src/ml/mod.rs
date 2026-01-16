@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Machine Learning Module
 //!
 //! This module provides ML capabilities for forecasting and optimization:

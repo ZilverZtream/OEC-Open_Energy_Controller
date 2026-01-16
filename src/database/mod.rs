@@ -1,6 +1,7 @@
 #![cfg(feature = "db")]
 
 pub mod models;
+pub mod repositories;
 
 use anyhow::{Context, Result};
 use sqlx::{postgres::PgPoolOptions, PgPool};

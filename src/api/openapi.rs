@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 #[cfg(feature = "swagger")]
 use utoipa::OpenApi;
 

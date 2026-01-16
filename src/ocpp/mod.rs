@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! OCPP 1.6 Protocol Implementation for EV Charger Communication
 //!
 //! This module implements the Open Charge Point Protocol (OCPP) version 1.6,

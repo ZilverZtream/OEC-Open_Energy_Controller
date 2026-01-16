@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Weather forecast integration (SMHI - Swedish Meteorological Institute)
 //!
 //! This module provides weather data for forecasting solar production and
@@ -8,7 +9,7 @@ use chrono::{DateTime, FixedOffset};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Weather forecast point
 #[derive(Debug, Clone, Serialize, Deserialize)]

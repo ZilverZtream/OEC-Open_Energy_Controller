@@ -1,8 +1,8 @@
+#![allow(dead_code)]
 use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
 };
-use tower::Layer;
 
 #[derive(Clone)]
 pub struct AuthConfig {

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -5,7 +6,6 @@ use serde::Serialize;
 use crate::{
     api::{error::ApiError, response::ApiResponse},
     controller::AppState,
-    domain::forecast::{ConsumptionForecast, PriceForecast, ProductionForecast},
 };
 
 /// Combined forecast response

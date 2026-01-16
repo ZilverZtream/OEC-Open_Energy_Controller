@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use axum::{
     extract::{Path, State},
     Json,
@@ -9,7 +10,6 @@ use uuid::Uuid;
 use crate::{
     api::{error::ApiError, response::ApiResponse},
     controller::AppState,
-    domain::types::Power,
 };
 
 /// Schedule response

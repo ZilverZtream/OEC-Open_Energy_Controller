@@ -1,4 +1,4 @@
-use chrono::Utc;
+#![allow(dead_code)]
 
 use super::{AllConstraints, PowerFlowInputs, PowerSnapshot};
 
@@ -47,7 +47,7 @@ impl PowerFlowModel {
         )?;
 
         // Step 4: Battery power decision (charge, discharge, or idle)
-        let (battery_kw, remaining_pv_after_battery) = self.decide_battery_power(
+        let (battery_kw, _remaining_pv_after_battery) = self.decide_battery_power(
             &inputs,
             remaining_pv_after_ev,
             house_deficit,

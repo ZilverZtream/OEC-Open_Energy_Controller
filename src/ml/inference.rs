@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! ML Model Inference Engine
 //!
 //! This module provides functionality for running trained models in production.
@@ -26,8 +27,8 @@ impl ModelRegistry {
     }
 
     /// Get a model by ID
-    pub async fn get(&self, model_id: &str) -> Option<Box<dyn MLModel>> {
-        let models = self.models.read().await;
+    pub async fn get(&self, _model_id: &str) -> Option<Box<dyn MLModel>> {
+        let _models = self.models.read().await;
         // Since we can't clone Box<dyn MLModel> directly, we return None for now
         // In a real implementation, we'd need to implement Clone for MLModel
         // or use Arc<dyn MLModel> instead
@@ -80,7 +81,7 @@ impl InferenceEngine {
     pub async fn predict(
         &self,
         model_id: &str,
-        features: &FeatureVector,
+        _features: &FeatureVector,
     ) -> Result<Prediction> {
         // In a real implementation, we'd retrieve the model and run prediction
         // For now, return a placeholder
