@@ -1,0 +1,29 @@
+pub mod v1;
+#[cfg(feature="swagger")]
+pub mod openapi;
+
+use axum::Router;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
+
+use crate::{config::Config, controller::AppState};
+
+pub fn router(state: AppState, cfg: &Config) -> Router {
+    Router::new()
+        .nest("/api/v1", v1::router(state, cfg))
+        .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
+}
+
+#[cfg(feature="swagger")]
+pub fn with_swagger(app: Router) -> Router {
+    use utoipa_swagger_ui::SwaggerUi;
+    use crate::api::openapi::ApiDoc;
+    app.merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
+}
+
+#[cfg(feature="metrics")]
+pub fn with_metrics(app: Router) -> Router {
+    use axum_prometheus::PrometheusMetricLayer;
+    let (layer, handle) = PrometheusMetricLayer::pair();
+    app.layer(layer).route("/metrics", axum::routing::get(move || async move { handle.render() }))
+}

@@ -1,0 +1,29 @@
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[auth]
+token = "devtoken"
+
+[controller]
+tick_seconds = 60
+reoptimize_every_minutes = 60
+default_area = "SE3"
+default_horizon_hours = 24
+
+[battery]
+capacity_kwh = 10.0
+initial_soc_percent = 50.0
+max_charge_kw = 5.0
+max_discharge_kw = 5.0
+efficiency = 0.92
+degradation_per_cycle = 0.001
+
+[prices]
+provider = "elprisetjustnu"
+base_url = "https://www.elprisetjustnu.se"
+http_timeout_seconds = 10
+cache_ttl_seconds = 3600
+
+[db]
+url = "postgres://oec:oec@127.0.0.1:5432/oec"
