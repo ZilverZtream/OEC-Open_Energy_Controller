@@ -1,22 +1,25 @@
 pub mod pid;
 
-use anyhow::Result;
-use chrono::{DateTime, FixedOffset, Local};
-use std::sync::Arc;
+use anyhow::{bail, Result};
+use chrono::{DateTime, FixedOffset, Local, Utc};
+use serde::Serialize;
+use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::Config;
 
-pub use pid::{PidController, PowerPidController};
-use crate::domain::{Battery, BatteryCapabilities, BatteryState, Forecast24h, PriceArea, Schedule};
+use crate::domain::{
+    Battery, BatteryCapabilities, BatteryState, Forecast24h, HealthStatus, PriceArea, Schedule,
+};
 use crate::forecast::{
     ElprisetJustNuPriceForecaster, ForecastEngine, SimpleConsumptionForecaster,
     SimpleProductionForecaster,
 };
 use crate::optimizer::{BatteryOptimizer, Constraints, DynamicProgrammingOptimizer, SystemState};
 use crate::repo::Repositories;
+pub use pid::{PidController, PowerPidController};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -71,6 +74,7 @@ impl AppState {
         });
         let schedule = Arc::new(RwLock::new(None::<Schedule>));
 
+        let history_capacity = ((24 * 60 * 60) / cfg.controller.tick_seconds.max(1)) as usize;
         let controller = Arc::new(BatteryController {
             battery,
             optimizer,
@@ -78,6 +82,10 @@ impl AppState {
             schedule,
             constraints: Arc::new(RwLock::new(Constraints::default())),
             household_id: Uuid::new_v4(),
+            state_history: Arc::new(RwLock::new(VecDeque::with_capacity(
+                history_capacity.max(1),
+            ))),
+            history_capacity: history_capacity.max(1),
         });
 
         Ok(Self {
@@ -114,6 +122,8 @@ pub struct BatteryController {
     pub schedule: Arc<RwLock<Option<Schedule>>>,
     pub constraints: Arc<RwLock<Constraints>>,
     pub household_id: Uuid,
+    state_history: Arc<RwLock<VecDeque<BatteryStateSample>>>,
+    history_capacity: usize,
 }
 
 impl BatteryController {
@@ -123,6 +133,8 @@ impl BatteryController {
         loop {
             interval.tick().await;
             let state = self.battery.read_state().await?;
+            let now_utc = Utc::now();
+            self.record_state(now_utc, state.clone()).await;
             let now: DateTime<FixedOffset> = Local::now().fixed_offset();
             let target_power = self
                 .schedule
@@ -183,6 +195,89 @@ impl BatteryController {
     pub async fn get_current_state(&self) -> Result<BatteryState> {
         self.battery.read_state().await
     }
+    pub async fn get_battery_capabilities(&self) -> BatteryCapabilities {
+        self.battery.capabilities()
+    }
+    pub async fn get_battery_health(&self) -> Result<HealthStatus> {
+        self.battery.health_check().await
+    }
+    pub async fn set_battery_power(&self, power_w: f64) -> Result<()> {
+        if !power_w.is_finite() {
+            bail!("power must be finite");
+        }
+        let caps = self.battery.capabilities();
+        let max_charge_w = caps.max_charge_kw * 1000.0;
+        let max_discharge_w = caps.max_discharge_kw * 1000.0;
+        if power_w >= 0.0 && power_w > max_charge_w {
+            bail!("charge power {}W exceeds max {}W", power_w, max_charge_w);
+        }
+        if power_w < 0.0 && power_w.abs() > max_discharge_w {
+            bail!(
+                "discharge power {}W exceeds max {}W",
+                power_w.abs(),
+                max_discharge_w
+            );
+        }
+        self.battery.set_power(power_w).await
+    }
+    pub async fn get_battery_history(
+        &self,
+        start_time: DateTime<Utc>,
+        end_time: DateTime<Utc>,
+        interval: Option<chrono::Duration>,
+    ) -> Vec<BatteryStateSample> {
+        let history = self.state_history.read().await;
+        let mut results = Vec::new();
+        let mut last_included: Option<DateTime<Utc>> = None;
+
+        for sample in history.iter() {
+            if sample.timestamp < start_time || sample.timestamp > end_time {
+                continue;
+            }
+            if let (Some(interval), Some(last)) = (interval, last_included) {
+                if sample.timestamp - last < interval {
+                    continue;
+                }
+            }
+            last_included = Some(sample.timestamp);
+            results.push(sample.clone());
+        }
+
+        results
+    }
+    pub async fn get_battery_statistics(
+        &self,
+        start_time: DateTime<Utc>,
+        end_time: DateTime<Utc>,
+    ) -> Option<BatteryStatistics> {
+        let history = self.get_battery_history(start_time, end_time, None).await;
+        if history.is_empty() {
+            return None;
+        }
+
+        let mut min_soc = f64::MAX;
+        let mut max_soc = f64::MIN;
+        let mut sum_soc = 0.0;
+        let mut sum_power = 0.0;
+        for sample in &history {
+            let soc = sample.state.soc_percent;
+            min_soc = min_soc.min(soc);
+            max_soc = max_soc.max(soc);
+            sum_soc += soc;
+            sum_power += sample.state.power_w;
+        }
+
+        let count = history.len() as f64;
+        Some(BatteryStatistics {
+            average_soc_percent: sum_soc / count,
+            min_soc_percent: min_soc,
+            max_soc_percent: max_soc,
+            average_power_w: sum_power / count,
+            sample_count: history.len() as u32,
+            window_start: start_time,
+            window_end: end_time,
+        })
+    }
     pub async fn get_forecast(&self, area: PriceArea) -> Result<Forecast24h> {
         self.forecast_engine
             .get_forecast_24h(area, self.household_id)
@@ -191,9 +286,175 @@ impl BatteryController {
     pub async fn get_constraints(&self) -> Constraints {
         self.constraints.read().await.clone()
     }
+    async fn record_state(&self, timestamp: DateTime<Utc>, state: BatteryState) {
+        let mut history = self.state_history.write().await;
+        if history.len() >= self.history_capacity {
+            history.pop_front();
+        }
+        history.push_back(BatteryStateSample { timestamp, state });
+    }
 }
 
 fn simple_p_control(actual_w: f64, target_w: f64) -> f64 {
     let k = 0.5;
     target_w + (target_w - actual_w) * k
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BatteryStateSample {
+    pub timestamp: DateTime<Utc>,
+    pub state: BatteryState,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BatteryStatistics {
+    pub average_soc_percent: f64,
+    pub min_soc_percent: f64,
+    pub max_soc_percent: f64,
+    pub average_power_w: f64,
+    pub sample_count: u32,
+    pub window_start: DateTime<Utc>,
+    pub window_end: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{BatteryCapabilities, BatteryState, BatteryStatus};
+    use crate::forecast::{ConsumptionForecaster, PriceForecaster, ProductionForecaster};
+    use async_trait::async_trait;
+    use chrono::Duration;
+    use std::collections::VecDeque;
+
+    struct DummyPriceForecaster;
+    struct DummyConsumptionForecaster;
+    struct DummyProductionForecaster;
+
+    #[async_trait]
+    impl PriceForecaster for DummyPriceForecaster {
+        async fn predict_next_24h(
+            &self,
+            _area: PriceArea,
+        ) -> Result<Vec<crate::domain::PricePoint>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl ConsumptionForecaster for DummyConsumptionForecaster {
+        async fn predict_next_24h(
+            &self,
+            _household_id: Uuid,
+        ) -> Result<Vec<crate::domain::ConsumptionPoint>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl ProductionForecaster for DummyProductionForecaster {
+        async fn predict_next_24h(
+            &self,
+            _household_id: Uuid,
+        ) -> Result<Vec<crate::domain::ProductionPoint>> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn build_controller() -> BatteryController {
+        let caps = BatteryCapabilities {
+            capacity_kwh: 10.0,
+            max_charge_kw: 5.0,
+            max_discharge_kw: 5.0,
+            efficiency: 0.95,
+            degradation_per_cycle: 0.01,
+            chemistry: crate::domain::BatteryChemistry::LiFePO4,
+        };
+        let state = BatteryState {
+            soc_percent: 50.0,
+            power_w: 0.0,
+            voltage_v: 48.0,
+            temperature_c: 25.0,
+            health_percent: 100.0,
+            status: BatteryStatus::Idle,
+        };
+        let battery = Arc::new(crate::domain::SimulatedBattery::new(state, caps));
+        let forecast_engine = ForecastEngine::new(
+            Box::new(DummyPriceForecaster),
+            Box::new(DummyConsumptionForecaster),
+            Box::new(DummyProductionForecaster),
+        );
+
+        BatteryController {
+            battery,
+            optimizer: Arc::new(BatteryOptimizer {
+                strategy: Box::new(DynamicProgrammingOptimizer),
+            }),
+            forecast_engine: Arc::new(forecast_engine),
+            schedule: Arc::new(RwLock::new(None)),
+            constraints: Arc::new(RwLock::new(Constraints::default())),
+            household_id: Uuid::new_v4(),
+            state_history: Arc::new(RwLock::new(VecDeque::new())),
+            history_capacity: 10,
+        }
+    }
+
+    #[tokio::test]
+    async fn battery_history_downsamples_by_interval() {
+        let controller = build_controller();
+        let start = Utc::now() - Duration::minutes(10);
+        for i in 0..5 {
+            let timestamp = start + Duration::minutes(i);
+            let state = BatteryState {
+                soc_percent: 40.0 + i as f64,
+                power_w: 100.0,
+                voltage_v: 48.0,
+                temperature_c: 25.0,
+                health_percent: 100.0,
+                status: BatteryStatus::Idle,
+            };
+            controller.record_state(timestamp, state).await;
+        }
+
+        let history = controller
+            .get_battery_history(
+                start,
+                start + Duration::minutes(4),
+                Some(Duration::minutes(2)),
+            )
+            .await;
+
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0].state.soc_percent, 40.0);
+        assert_eq!(history[1].state.soc_percent, 42.0);
+        assert_eq!(history[2].state.soc_percent, 44.0);
+    }
+
+    #[tokio::test]
+    async fn battery_statistics_are_computed_from_history() {
+        let controller = build_controller();
+        let start = Utc::now() - Duration::minutes(5);
+        for (i, soc) in [10.0, 20.0, 30.0].iter().enumerate() {
+            let timestamp = start + Duration::minutes(i as i64);
+            let state = BatteryState {
+                soc_percent: *soc,
+                power_w: 100.0 * (i as f64 + 1.0),
+                voltage_v: 48.0,
+                temperature_c: 25.0,
+                health_percent: 100.0,
+                status: BatteryStatus::Idle,
+            };
+            controller.record_state(timestamp, state).await;
+        }
+
+        let stats = controller
+            .get_battery_statistics(start, start + Duration::minutes(2))
+            .await
+            .expect("expected stats");
+
+        assert_eq!(stats.sample_count, 3);
+        assert!((stats.average_soc_percent - 20.0).abs() < f64::EPSILON);
+        assert!((stats.average_power_w - 200.0).abs() < f64::EPSILON);
+        assert_eq!(stats.min_soc_percent, 10.0);
+        assert_eq!(stats.max_soc_percent, 30.0);
+    }
 }

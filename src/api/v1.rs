@@ -28,23 +28,34 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
         .route("/healthz", get(healthz))
         // Battery routes
         .route("/battery/state", get(battery::get_battery_state))
-        // TODO: Re-enable once BatteryController implements these methods
-        // .route("/battery/capabilities", get(battery::get_battery_capabilities))
-        // .route("/battery/health", get(battery::get_battery_health))
-        // .route("/battery/power", post(battery::set_battery_power))
-        // .route("/battery/history", get(battery::get_battery_history))
-        // .route("/battery/statistics", get(battery::get_battery_statistics))
+        .route(
+            "/battery/capabilities",
+            get(battery::get_battery_capabilities),
+        )
+        .route("/battery/health", get(battery::get_battery_health))
+        .route("/battery/power", post(battery::set_battery_power))
+        .route("/battery/history", get(battery::get_battery_history))
+        .route("/battery/statistics", get(battery::get_battery_statistics))
         // EV Charger routes
         .route("/ev-charger/state", get(ev_charger::get_charger_state))
-        .route("/ev-charger/current", post(ev_charger::set_charging_current))
+        .route(
+            "/ev-charger/current",
+            post(ev_charger::set_charging_current),
+        )
         .route("/ev-charger/start", post(ev_charger::start_charging))
         .route("/ev-charger/stop", post(ev_charger::stop_charging))
-        .route("/ev-charger/sessions", get(ev_charger::get_charging_sessions))
+        .route(
+            "/ev-charger/sessions",
+            get(ev_charger::get_charging_sessions),
+        )
         // Inverter routes
         .route("/inverter/state", get(inverter::get_inverter_state))
         .route("/inverter/mode", post(inverter::set_inverter_mode))
         .route("/inverter/export-limit", post(inverter::set_export_limit))
-        .route("/inverter/production", get(inverter::get_production_history))
+        .route(
+            "/inverter/production",
+            get(inverter::get_production_history),
+        )
         .route("/inverter/efficiency", get(inverter::get_efficiency_stats))
         // Grid routes - TODO: Re-enable once BatteryController implements these methods
         // .route("/grid/status", get(grid::get_grid_status))
