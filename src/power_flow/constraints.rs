@@ -1,0 +1,231 @@
+use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
+
+/// Physical constraints (hard limits that CANNOT be violated)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhysicalConstraints {
+    /// Maximum grid import power (fuse limit)
+    pub max_grid_import_kw: f64,
+
+    /// Maximum grid export power
+    pub max_grid_export_kw: f64,
+
+    /// Maximum battery charge power
+    pub max_battery_charge_kw: f64,
+
+    /// Maximum battery discharge power
+    pub max_battery_discharge_kw: f64,
+
+    /// Minimum EV charger current (A)
+    pub evse_min_current_a: f64,
+
+    /// Maximum EV charger current (A)
+    pub evse_max_current_a: f64,
+
+    /// Number of phases (1 or 3)
+    pub phases: u8,
+
+    /// Maximum current per phase (optional, for 3-phase systems)
+    pub max_current_per_phase_a: Option<f64>,
+
+    /// Grid voltage (V, typically 230V single-phase or 400V three-phase)
+    pub grid_voltage_v: f64,
+}
+
+impl Default for PhysicalConstraints {
+    fn default() -> Self {
+        Self {
+            max_grid_import_kw: 16.0,     // 16kW = ~70A at 230V single-phase
+            max_grid_export_kw: 16.0,
+            max_battery_charge_kw: 5.0,
+            max_battery_discharge_kw: 5.0,
+            evse_min_current_a: 6.0,       // IEC 61851 minimum
+            evse_max_current_a: 32.0,      // Typical home installation
+            phases: 1,
+            max_current_per_phase_a: Some(32.0),
+            grid_voltage_v: 230.0,
+        }
+    }
+}
+
+/// Safety constraints (important limits that should be respected)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SafetyConstraints {
+    /// Minimum battery SoC (%)
+    pub battery_min_soc_percent: f64,
+
+    /// Maximum battery SoC (%)
+    pub battery_max_soc_percent: f64,
+
+    /// House load always has priority (cannot be curtailed)
+    pub house_priority: bool,
+
+    /// Maximum battery cycles per day (for longevity)
+    pub max_battery_cycles_per_day: f64,
+
+    /// Maximum battery temperature (°C)
+    pub max_battery_temp_c: f64,
+}
+
+impl Default for SafetyConstraints {
+    fn default() -> Self {
+        Self {
+            battery_min_soc_percent: 20.0,
+            battery_max_soc_percent: 95.0,
+            house_priority: true,
+            max_battery_cycles_per_day: 1.5,
+            max_battery_temp_c: 45.0,
+        }
+    }
+}
+
+/// Economic objectives (optimization goals)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EconomicObjectives {
+    /// Current grid electricity price (SEK/kWh)
+    pub grid_price_sek_kwh: f64,
+
+    /// Grid export price (SEK/kWh, usually lower than import price)
+    pub export_price_sek_kwh: f64,
+
+    /// Prefer self-consumption over grid export
+    pub prefer_self_consumption: bool,
+
+    /// Price threshold for arbitrage (only discharge battery if price > threshold)
+    pub arbitrage_threshold_sek_kwh: f64,
+
+    /// EV departure time (if EV is connected)
+    pub ev_departure_time: Option<DateTime<Utc>>,
+
+    /// EV target SoC (%) at departure time
+    pub ev_target_soc_percent: Option<f64>,
+}
+
+impl Default for EconomicObjectives {
+    fn default() -> Self {
+        Self {
+            grid_price_sek_kwh: 1.5,
+            export_price_sek_kwh: 0.8,
+            prefer_self_consumption: true,
+            arbitrage_threshold_sek_kwh: 2.0,
+            ev_departure_time: None,
+            ev_target_soc_percent: None,
+        }
+    }
+}
+
+/// All constraints bundled together
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AllConstraints {
+    pub physical: PhysicalConstraints,
+    pub safety: SafetyConstraints,
+    pub economic: EconomicObjectives,
+}
+
+impl Default for AllConstraints {
+    fn default() -> Self {
+        Self {
+            physical: PhysicalConstraints::default(),
+            safety: SafetyConstraints::default(),
+            economic: EconomicObjectives::default(),
+        }
+    }
+}
+
+impl AllConstraints {
+    /// Create a new set of constraints
+    pub fn new(
+        physical: PhysicalConstraints,
+        safety: SafetyConstraints,
+        economic: EconomicObjectives,
+    ) -> Self {
+        Self {
+            physical,
+            safety,
+            economic,
+        }
+    }
+
+    /// Validate constraints for consistency
+    pub fn validate(&self) -> Result<(), String> {
+        // Check physical constraints
+        if self.physical.max_grid_import_kw <= 0.0 {
+            return Err("max_grid_import_kw must be positive".to_string());
+        }
+
+        if self.physical.max_battery_charge_kw <= 0.0 {
+            return Err("max_battery_charge_kw must be positive".to_string());
+        }
+
+        if self.physical.evse_min_current_a < 6.0 {
+            return Err("evse_min_current_a must be at least 6A (IEC 61851)".to_string());
+        }
+
+        if self.physical.evse_max_current_a < self.physical.evse_min_current_a {
+            return Err("evse_max_current_a must be >= evse_min_current_a".to_string());
+        }
+
+        // Check safety constraints
+        if self.safety.battery_min_soc_percent < 0.0 || self.safety.battery_min_soc_percent > 100.0 {
+            return Err("battery_min_soc_percent must be between 0 and 100".to_string());
+        }
+
+        if self.safety.battery_max_soc_percent < self.safety.battery_min_soc_percent {
+            return Err("battery_max_soc_percent must be >= battery_min_soc_percent".to_string());
+        }
+
+        // Check economic objectives
+        if self.economic.grid_price_sek_kwh < 0.0 {
+            return Err("grid_price_sek_kwh cannot be negative".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_constraints() {
+        let constraints = AllConstraints::default();
+        assert!(constraints.validate().is_ok());
+    }
+
+    #[test]
+    fn test_physical_constraints_default() {
+        let physical = PhysicalConstraints::default();
+        assert_eq!(physical.phases, 1);
+        assert!(physical.max_grid_import_kw > 0.0);
+    }
+
+    #[test]
+    fn test_safety_constraints_default() {
+        let safety = SafetyConstraints::default();
+        assert_eq!(safety.battery_min_soc_percent, 20.0);
+        assert_eq!(safety.battery_max_soc_percent, 95.0);
+        assert!(safety.house_priority);
+    }
+
+    #[test]
+    fn test_validation_invalid_soc() {
+        let mut constraints = AllConstraints::default();
+        constraints.safety.battery_min_soc_percent = 110.0; // Invalid
+        assert!(constraints.validate().is_err());
+    }
+
+    #[test]
+    fn test_validation_invalid_current() {
+        let mut constraints = AllConstraints::default();
+        constraints.physical.evse_min_current_a = 3.0; // Too low
+        assert!(constraints.validate().is_err());
+    }
+
+    #[test]
+    fn test_validation_invalid_price() {
+        let mut constraints = AllConstraints::default();
+        constraints.economic.grid_price_sek_kwh = -1.0; // Negative
+        assert!(constraints.validate().is_err());
+    }
+}

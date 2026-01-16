@@ -6,6 +6,14 @@ pub mod ev_charger;
 pub mod grid;
 pub mod inverter;
 pub mod weather;
+pub mod error;
+pub mod response;
+pub mod health;
+pub mod status;
+pub mod devices;
+pub mod schedule;
+pub mod forecast;
+pub mod optimize;
 
 use axum::Router;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};

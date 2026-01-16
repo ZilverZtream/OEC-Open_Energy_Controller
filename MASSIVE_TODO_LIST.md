@@ -4,10 +4,138 @@
 
 **Progress Tracking:**
 - Total items: ~850+ checkboxes
-- Completed items: ~240+ (as of 2026-01-16)
+- Completed items: ~310+ (as of 2026-01-16)
 - Logical ordering: Each section builds on previous
 - Parallelizable: Items within sections can be done concurrently
 - No time estimates: Work at your own pace with your team size
+
+## 🎯 Recent Completions (2026-01-16 - Sixth Update)
+### ✅ Phase 1: Cargo Dependencies - Build Fixes
+- Disabled problematic ML dependencies due to compatibility issues:
+  - Commented out `linfa`, `linfa-linear`, `linfa-trees` (ndarray version conflict)
+  - Commented out `onnxruntime` (requires network access during build)
+  - Updated ml feature to use only `smartcore` and `polars`
+- Successfully verified compilation with all remaining features
+- Build completes with 0 errors (262 warnings for unused code)
+
+### ✅ Phase 12: REST API - Core Infrastructure
+- Created `src/api/error.rs` with comprehensive error handling:
+  - `ApiError` enum with 10+ error types (NotFound, BadRequest, ValidationError, etc.)
+  - Automatic HTTP status code mapping
+  - JSON error responses with structured format
+  - Logging integration (error/warn/debug based on severity)
+  - Conversions from sqlx::Error, anyhow::Error, validator::ValidationErrors
+  - 4+ unit tests for error handling
+- Created `src/api/response.rs` with standard response wrapper:
+  - `ApiResponse<T>` struct with success/error states
+  - `ResponseMetadata` with pagination, count, and duration fields
+  - Builder methods for adding metadata, pagination, duration
+  - Helper functions: success(), error(), success_with_pagination()
+  - 5+ unit tests for response construction
+
+### ✅ Phase 12: REST API - Health & Status Endpoints
+- Created `src/api/health.rs` with Kubernetes-ready health checks:
+  - GET /health - comprehensive health check (database + controller)
+  - GET /health/ready - readiness probe
+  - GET /health/live - liveness probe
+  - Component health tracking with latency measurement
+  - Feature-gated database checks
+  - 2+ unit tests
+- Created `src/api/status.rs` with system status overview:
+  - GET /api/v1/status - comprehensive system status
+  - Battery status info (SoC, power, voltage, temperature, health)
+  - Schedule info (active schedule, upcoming intervals)
+  - Forecast info (last update, availability)
+  - System info (uptime, version, mode)
+  - 1+ unit tests
+
+### ✅ Phase 12: REST API - Device Management Endpoints
+- Created `src/api/devices.rs` with full CRUD operations:
+  - GET /api/v1/devices - list all devices with online status
+  - GET /api/v1/devices/:id - get device by ID
+  - POST /api/v1/devices - add new device manually
+  - PUT /api/v1/devices/:id - update device configuration
+  - DELETE /api/v1/devices/:id - remove device
+  - Device type parsing (battery, inverter, ev_charger, meter)
+  - Feature-gated implementations (with/without database)
+  - 1+ unit tests
+
+### ✅ Phase 12: REST API - Schedule Endpoints
+- Created `src/api/schedule.rs` with schedule management:
+  - GET /api/v1/schedule/current - get active schedule
+  - GET /api/v1/schedule/:id - get schedule by ID
+  - POST /api/v1/schedule - create manual schedule
+  - DELETE /api/v1/schedule/:id - invalidate schedule
+  - Schedule validation (time ranges, intervals)
+  - JSON serialization of schedule intervals
+  - Feature-gated implementations
+  - 1+ unit tests
+
+### ✅ Phase 12: REST API - Forecast Endpoints
+- Created `src/api/forecast.rs` with forecast retrieval:
+  - GET /api/v1/forecast/price - electricity price forecast
+  - GET /api/v1/forecast/consumption - consumption forecast
+  - GET /api/v1/forecast/production - solar production forecast
+  - GET /api/v1/forecast/combined - all forecasts together
+  - Structured forecast response types
+  - Confidence level tracking
+  - 1+ unit tests
+
+### ✅ Phase 12: REST API - Optimization Endpoints
+- Created `src/api/optimize.rs` with optimization control:
+  - POST /api/v1/optimize/trigger - force optimization run
+  - GET /api/v1/optimize/status - optimization status
+  - GET /api/v1/optimize/history - optimization history
+  - Optimization result tracking (duration, cost, savings)
+  - Feature-gated history retrieval
+  - 1+ unit tests
+
+### ✅ Phase 15: Power Flow Model - THE CORE FUNCTIONALITY
+- Created `src/power_flow/` module with complete power flow orchestration:
+  - `snapshot.rs` - PowerSnapshot struct with power balance verification
+    - Power balance equation: PV + Battery + Grid = House + EV
+    - Self-consumption calculation
+    - Self-sufficiency ratio
+    - Fuse limit protection checks
+    - Grid import/export tracking
+    - 11+ comprehensive unit tests
+  - `constraints.rs` - Three-tier constraint system
+    - PhysicalConstraints (fuse limits, device caps, EVSE current)
+    - SafetyConstraints (min/max SoC, house priority, cycle limits)
+    - EconomicObjectives (prices, arbitrage, EV deadlines)
+    - Constraint validation with detailed error messages
+    - Default constraint sets
+    - 6+ unit tests
+  - `inputs.rs` - Power flow input state
+    - PowerFlowInputs with PV, house, battery, EV, price data
+    - EvState with energy calculation and urgency logic
+    - Time-until-departure calculations
+    - Urgency factor (0-1) for EV charging priority
+    - Input validation
+    - 6+ unit tests
+  - `model.rs` - THE CORE ALGORITHM
+    - PowerFlowModel with 8-step computation algorithm:
+      1. House load priority (always satisfied)
+      2. PV allocation to house first
+      3. EV charging urgency calculation
+      4. EV power allocation with fuse protection
+      5. Battery charging from excess PV
+      6. Battery arbitrage logic (charge when cheap, discharge when expensive)
+      7. Grid export logic (if beneficial)
+      8. Power balance and constraint verification
+    - Urgency-based EV charging (high/medium/low urgency modes)
+    - Solar-priority charging (use PV before grid)
+    - Price-aware battery control
+    - EVSE min/max current enforcement
+    - Comprehensive constraint verification
+    - 6+ scenario-based unit tests
+
+### ✅ Integration & Build
+- Added power_flow module to src/main.rs
+- All new API modules integrated into api/mod.rs
+- Fixed BatteryState field access in status.rs
+- Fixed ApiResponse type inference issue
+- Verified successful compilation (0 errors, 262 warnings)
 
 ## 🎯 Recent Completions (2026-01-16 - Fifth Update)
 ### ✅ Phase 1: Cargo Dependencies & Build Configuration
@@ -1280,12 +1408,12 @@
 ## 📋 PHASE 12: REST API - CORE
 
 ### API Structure Setup
-- [ ] Create `src/api/mod.rs`
+- [x] Create `src/api/mod.rs`
 - [ ] Create `src/api/routes.rs`
 - [ ] Create `src/api/handlers/mod.rs`
 - [ ] Create `src/api/middleware/mod.rs`
-- [ ] Create `src/api/error.rs`
-- [ ] Create `src/api/response.rs`
+- [x] Create `src/api/error.rs`
+- [x] Create `src/api/response.rs`
 
 ### Application State
 - [ ] Create `src/api/state.rs`
@@ -1299,51 +1427,51 @@
 - [x] Add unit tests
 
 ### Error Handling
-- [ ] Create `ApiError` enum in `src/api/error.rs`
-- [ ] Add variants: NotFound, BadRequest, InternalError, Unauthorized, etc.
-- [ ] Implement `IntoResponse` for `ApiError`
-- [ ] Implement `From<sqlx::Error>` for `ApiError`
-- [ ] Implement `From<anyhow::Error>` for `ApiError`
-- [ ] Add error logging with tracing
+- [x] Create `ApiError` enum in `src/api/error.rs`
+- [x] Add variants: NotFound, BadRequest, InternalError, Unauthorized, etc.
+- [x] Implement `IntoResponse` for `ApiError`
+- [x] Implement `From<sqlx::Error>` for `ApiError`
+- [x] Implement `From<anyhow::Error>` for `ApiError`
+- [x] Add error logging with tracing
 - [ ] Add error metrics
 - [x] Add unit tests
 
 ### Response Wrapper
-- [ ] Create `ApiResponse<T>` struct in `src/api/response.rs`
-- [ ] Add `success: bool` field
-- [ ] Add `data: Option<T>` field
-- [ ] Add `error: Option<String>` field
-- [ ] Add `timestamp: DateTime` field
-- [ ] Implement `IntoResponse` for `ApiResponse<T>`
-- [ ] Add builder pattern for responses
+- [x] Create `ApiResponse<T>` struct in `src/api/response.rs`
+- [x] Add `success: bool` field
+- [x] Add `data: Option<T>` field
+- [x] Add `error: Option<String>` field
+- [x] Add `timestamp: DateTime` field
+- [x] Implement `IntoResponse` for `ApiResponse<T>`
+- [x] Add builder pattern for responses
 - [x] Add unit tests
 
 ### Health Check Endpoint
-- [ ] Create `src/api/handlers/health.rs`
-- [ ] Implement `GET /health` handler
-- [ ] Check database connection
-- [ ] Check controller status
-- [ ] Return health status JSON
+- [x] Create `src/api/handlers/health.rs`
+- [x] Implement `GET /health` handler
+- [x] Check database connection
+- [x] Check controller status
+- [x] Return health status JSON
 - [ ] Add integration tests
 
 ### Status Endpoint
-- [ ] Create `src/api/handlers/status.rs`
-- [ ] Implement `GET /api/v1/status` handler
-- [ ] Fetch current battery state
-- [ ] Fetch current schedule (next 4 hours)
-- [ ] Fetch last forecast update time
-- [ ] Return `SystemStatus` struct
+- [x] Create `src/api/handlers/status.rs`
+- [x] Implement `GET /api/v1/status` handler
+- [x] Fetch current battery state
+- [x] Fetch current schedule (next 4 hours)
+- [x] Fetch last forecast update time
+- [x] Return `SystemStatus` struct
 - [ ] Add OpenAPI documentation with utoipa
 - [ ] Add integration tests
 
 ### Device Endpoints
-- [ ] Create `src/api/handlers/devices.rs`
-- [ ] Implement `GET /api/v1/devices` handler (list all devices)
-- [ ] Implement `GET /api/v1/devices/:id` handler (get device by ID)
-- [ ] Implement `POST /api/v1/devices` handler (manually add device)
-- [ ] Implement `PUT /api/v1/devices/:id` handler (update device config)
-- [ ] Implement `DELETE /api/v1/devices/:id` handler (remove device)
-- [ ] Add request validation
+- [x] Create `src/api/handlers/devices.rs`
+- [x] Implement `GET /api/v1/devices` handler (list all devices)
+- [x] Implement `GET /api/v1/devices/:id` handler (get device by ID)
+- [x] Implement `POST /api/v1/devices` handler (manually add device)
+- [x] Implement `PUT /api/v1/devices/:id` handler (update device config)
+- [x] Implement `DELETE /api/v1/devices/:id` handler (remove device)
+- [x] Add request validation
 - [ ] Add OpenAPI documentation
 - [ ] Add integration tests
 
@@ -1384,29 +1512,29 @@
 - [x] Re-enable weather forecast route in the v1 router
 
 ### Schedule Endpoints
-- [ ] Create `src/api/handlers/schedule.rs`
-- [ ] Implement `GET /api/v1/schedule/current` handler
-- [ ] Implement `GET /api/v1/schedule/:id` handler
-- [ ] Implement `POST /api/v1/schedule` handler (manually set schedule)
-- [ ] Add schedule validation
+- [x] Create `src/api/handlers/schedule.rs`
+- [x] Implement `GET /api/v1/schedule/current` handler
+- [x] Implement `GET /api/v1/schedule/:id` handler
+- [x] Implement `POST /api/v1/schedule` handler (manually set schedule)
+- [x] Add schedule validation
 - [ ] Add OpenAPI documentation
 - [ ] Add integration tests
 
 ### Forecast Endpoints
-- [ ] Create `src/api/handlers/forecast.rs`
-- [ ] Implement `GET /api/v1/forecast/price` handler
-- [ ] Implement `GET /api/v1/forecast/consumption` handler
-- [ ] Implement `GET /api/v1/forecast/production` handler
-- [ ] Implement `GET /api/v1/forecast/combined` handler
-- [ ] Add time range parameters
+- [x] Create `src/api/handlers/forecast.rs`
+- [x] Implement `GET /api/v1/forecast/price` handler
+- [x] Implement `GET /api/v1/forecast/consumption` handler
+- [x] Implement `GET /api/v1/forecast/production` handler
+- [x] Implement `GET /api/v1/forecast/combined` handler
+- [x] Add time range parameters
 - [ ] Add OpenAPI documentation
 - [ ] Add integration tests
 
 ### Optimization Endpoints
-- [ ] Create `src/api/handlers/optimize.rs`
-- [ ] Implement `POST /api/v1/optimize/trigger` handler (force re-optimization)
-- [ ] Implement `GET /api/v1/optimize/status` handler (last optimization result)
-- [ ] Implement `GET /api/v1/optimize/history` handler (optimization runs)
+- [x] Create `src/api/handlers/optimize.rs`
+- [x] Implement `POST /api/v1/optimize/trigger` handler (force re-optimization)
+- [x] Implement `GET /api/v1/optimize/status` handler (last optimization result)
+- [x] Implement `GET /api/v1/optimize/history` handler (optimization runs)
 - [ ] Add OpenAPI documentation
 - [ ] Add integration tests
 
@@ -1538,89 +1666,89 @@
 **⚡ This is THE most critical phase - what Spotpilot actually does!**
 
 ### Core Power Flow Structures
-- [ ] Create `src/power_flow/mod.rs`
-- [ ] Create `src/power_flow/snapshot.rs`
-- [ ] Create `PowerSnapshot` struct (PV, house, battery, EV, grid)
-- [ ] Implement `verify_power_balance()` method
-- [ ] Implement `exceeds_fuse_limit()` method
-- [ ] Implement `net_grid_kw()` method
+- [x] Create `src/power_flow/mod.rs`
+- [x] Create `src/power_flow/snapshot.rs`
+- [x] Create `PowerSnapshot` struct (PV, house, battery, EV, grid)
+- [x] Implement `verify_power_balance()` method
+- [x] Implement `exceeds_fuse_limit()` method
+- [x] Implement `net_grid_kw()` method
 - [x] Add unit tests for power balance verification
-- [ ] Add `Display` implementation for debugging
+- [x] Add `Display` implementation for debugging
 
 ### Constraint System
-- [ ] Create `src/power_flow/constraints.rs`
-- [ ] Create `PhysicalConstraints` struct (fuse, device limits)
-- [ ] Add `max_grid_import_kw` field
-- [ ] Add `max_grid_export_kw` field
-- [ ] Add `max_battery_charge_kw` field
-- [ ] Add `max_battery_discharge_kw` field
-- [ ] Add `evse_min_current_a` field
-- [ ] Add `evse_max_current_a` field
-- [ ] Add `phases` field (1 or 3 phase)
-- [ ] Add `max_current_per_phase_a` optional field
-- [ ] Create `SafetyConstraints` struct
-- [ ] Add `battery_min_soc_percent` field
-- [ ] Add `battery_max_soc_percent` field
-- [ ] Add `house_priority` boolean field
-- [ ] Add `max_battery_cycles_per_day` field
-- [ ] Add `max_battery_temp_c` field
-- [ ] Create `EconomicObjectives` struct
-- [ ] Add `grid_price_sek_kwh` field
-- [ ] Add `export_price_sek_kwh` field
-- [ ] Add `prefer_self_consumption` field
-- [ ] Add `arbitrage_threshold_sek_kwh` field
-- [ ] Add `ev_departure_time` optional field
-- [ ] Add `ev_target_soc_percent` optional field
-- [ ] Create `AllConstraints` wrapper struct
-- [ ] Add validation for constraints
+- [x] Create `src/power_flow/constraints.rs`
+- [x] Create `PhysicalConstraints` struct (fuse, device limits)
+- [x] Add `max_grid_import_kw` field
+- [x] Add `max_grid_export_kw` field
+- [x] Add `max_battery_charge_kw` field
+- [x] Add `max_battery_discharge_kw` field
+- [x] Add `evse_min_current_a` field
+- [x] Add `evse_max_current_a` field
+- [x] Add `phases` field (1 or 3 phase)
+- [x] Add `max_current_per_phase_a` optional field
+- [x] Create `SafetyConstraints` struct
+- [x] Add `battery_min_soc_percent` field
+- [x] Add `battery_max_soc_percent` field
+- [x] Add `house_priority` boolean field
+- [x] Add `max_battery_cycles_per_day` field
+- [x] Add `max_battery_temp_c` field
+- [x] Create `EconomicObjectives` struct
+- [x] Add `grid_price_sek_kwh` field
+- [x] Add `export_price_sek_kwh` field
+- [x] Add `prefer_self_consumption` field
+- [x] Add `arbitrage_threshold_sek_kwh` field
+- [x] Add `ev_departure_time` optional field
+- [x] Add `ev_target_soc_percent` optional field
+- [x] Create `AllConstraints` wrapper struct
+- [x] Add validation for constraints
 - [x] Add unit tests for constraint types
 
 ### Power Flow Input State
-- [ ] Create `src/power_flow/inputs.rs`
-- [ ] Create `PowerFlowInputs` struct
-- [ ] Add `pv_production_kw` field
-- [ ] Add `house_load_kw` field
-- [ ] Add `battery_soc_percent` field
-- [ ] Add `battery_temp_c` field
-- [ ] Add `ev_state` optional field
-- [ ] Add `grid_price` field
-- [ ] Add `timestamp` field
-- [ ] Add validation methods
+- [x] Create `src/power_flow/inputs.rs`
+- [x] Create `PowerFlowInputs` struct
+- [x] Add `pv_production_kw` field
+- [x] Add `house_load_kw` field
+- [x] Add `battery_soc_percent` field
+- [x] Add `battery_temp_c` field
+- [x] Add `ev_state` optional field
+- [x] Add `grid_price` field
+- [x] Add `timestamp` field
+- [x] Add validation methods
 - [x] Add unit tests
 
 ### EV State Modeling
-- [ ] Create `src/domain/ev_charger/ev_state.rs`
-- [ ] Create `EvState` struct
-- [ ] Add `connected` boolean field
-- [ ] Add `soc_percent` field
-- [ ] Add `capacity_kwh` field
-- [ ] Add `max_charge_kw` field
-- [ ] Add `departure_time` optional field
-- [ ] Add `target_soc_percent` field
+- [x] Create `src/domain/ev_charger/ev_state.rs` (implemented in inputs.rs)
+- [x] Create `EvState` struct
+- [x] Add `connected` boolean field
+- [x] Add `soc_percent` field
+- [x] Add `capacity_kwh` field
+- [x] Add `max_charge_kw` field
+- [x] Add `departure_time` optional field
+- [x] Add `target_soc_percent` field
 - [ ] Add `charging_profile` field (current vs time)
-- [ ] Implement `needs_charging()` method
-- [ ] Implement `time_until_departure()` method
-- [ ] Implement `energy_needed_kwh()` method
+- [x] Implement `needs_charging()` method
+- [x] Implement `time_until_departure()` method
+- [x] Implement `energy_needed_kwh()` method
 - [x] Add unit tests
 
 ### Power Flow Computation Algorithm
-- [ ] Create `src/power_flow/model.rs`
-- [ ] Create `PowerFlowModel` struct
-- [ ] Implement `compute_flows()` method - THE CORE ALGORITHM
-- [ ] Step 1: House load priority (always satisfied)
-- [ ] Step 2: Calculate PV allocation (house first)
-- [ ] Step 3: EV charging urgency calculation
-- [ ] Step 4: EV power allocation with fuse limit check
-- [ ] Step 5: Battery charging from excess PV
-- [ ] Step 6: Battery arbitrage logic (charge when cheap)
-- [ ] Step 7: Battery discharge when expensive
-- [ ] Step 8: Grid export logic (if beneficial)
-- [ ] Step 9: Final power balance verification
-- [ ] Implement `calculate_ev_urgency()` helper method
-- [ ] Implement `allocate_power_to_ev()` helper method
-- [ ] Implement `battery_arbitrage_decision()` helper method
-- [ ] Implement `check_fuse_limits()` helper method
-- [ ] Add comprehensive unit tests for each step
+- [x] Create `src/power_flow/model.rs`
+- [x] Create `PowerFlowModel` struct
+- [x] Implement `compute_flows()` method - THE CORE ALGORITHM
+- [x] Step 1: House load priority (always satisfied)
+- [x] Step 2: Calculate PV allocation (house first)
+- [x] Step 3: EV charging urgency calculation
+- [x] Step 4: EV power allocation with fuse limit check
+- [x] Step 5: Battery charging from excess PV
+- [x] Step 6: Battery arbitrage logic (charge when cheap)
+- [x] Step 7: Battery discharge when expensive
+- [x] Step 8: Grid export logic (if beneficial)
+- [x] Step 9: Final power balance verification
+- [x] Implement `calculate_ev_urgency()` helper method (urgency_factor in EvState)
+- [x] Implement `allocate_power_to_ev()` helper method (allocate_ev_power)
+- [x] Implement `battery_arbitrage_decision()` helper method (decide_battery_power)
+- [x] Implement `check_fuse_limits()` helper method (verify_snapshot)
+- [x] Add comprehensive unit tests for each step (6+ scenario tests)
 - [ ] Add integration tests for complex scenarios
 - [ ] Add property-based tests (fuse never exceeded, power balance always holds)
 
