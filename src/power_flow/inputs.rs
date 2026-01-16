@@ -108,13 +108,17 @@ impl EvState {
 }
 
 impl PowerFlowInputs {
-    /// Create new power flow inputs
+    /// Create new power flow inputs with explicit timestamp
+    ///
+    /// CRITICAL FIX: Timestamp should be captured BEFORE sensor polling begins,
+    /// not after. This ensures accurate time-based calculations in PID controllers.
     pub fn new(
         pv_production_kw: f64,
         house_load_kw: f64,
         battery_soc_percent: f64,
         battery_temp_c: f64,
         grid_price_sek_kwh: f64,
+        timestamp: DateTime<Utc>,
     ) -> Self {
         Self {
             pv_production_kw,
@@ -124,8 +128,29 @@ impl PowerFlowInputs {
             ev_state: None,
             grid_price_sek_kwh,
             target_power_w: None,
-            timestamp: Utc::now(),
+            timestamp,
         }
+    }
+
+    /// Create new power flow inputs with current timestamp
+    ///
+    /// WARNING: Only use for testing. In production, capture timestamp before
+    /// sensor polling and use new() with explicit timestamp.
+    pub fn new_now(
+        pv_production_kw: f64,
+        house_load_kw: f64,
+        battery_soc_percent: f64,
+        battery_temp_c: f64,
+        grid_price_sek_kwh: f64,
+    ) -> Self {
+        Self::new(
+            pv_production_kw,
+            house_load_kw,
+            battery_soc_percent,
+            battery_temp_c,
+            grid_price_sek_kwh,
+            Utc::now(),
+        )
     }
 
     /// Set target battery power from optimizer schedule

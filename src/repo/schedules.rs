@@ -26,7 +26,43 @@ impl<'a> ScheduleRepository<'a> {
         Self { pool }
     }
 
+    /// Insert a new schedule, automatically invalidating any overlapping schedules
+    ///
+    /// CRITICAL FIX: Prevents "zombie schedule" overlaps where multiple conflicting
+    /// schedules exist for the same device and time window. This ensures the database
+    /// query get_current_schedule returns a deterministic result.
     pub async fn insert(&self, schedule: &ScheduleRow) -> Result<Uuid> {
+        // Start a transaction to ensure atomicity
+        let mut tx = self.pool.begin().await?;
+
+        // CRITICAL: Invalidate all existing schedules that overlap with the new schedule
+        // for the same device to prevent conflicting orders in overlapping time windows
+        if let Some(device_id) = schedule.device_id {
+            sqlx::query!(
+                r#"
+                UPDATE schedules
+                SET valid_until = $1
+                WHERE device_id = $2
+                  AND valid_until > $1
+                  AND (
+                    -- New schedule starts during existing schedule
+                    ($3 >= valid_from AND $3 < valid_until)
+                    -- New schedule ends during existing schedule
+                    OR ($4 > valid_from AND $4 <= valid_until)
+                    -- New schedule completely contains existing schedule
+                    OR ($3 <= valid_from AND $4 >= valid_until)
+                  )
+                "#,
+                schedule.created_at, // Invalidate at creation time of new schedule
+                device_id,
+                schedule.valid_from,
+                schedule.valid_until,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // Now insert the new schedule
         let rec = sqlx::query!(
             r#"
             INSERT INTO schedules (id, device_id, created_at, valid_from, valid_until, schedule_json, optimizer_version, cost_savings_estimate)
@@ -42,8 +78,11 @@ impl<'a> ScheduleRepository<'a> {
             schedule.optimizer_version,
             schedule.cost_savings_estimate,
         )
-        .fetch_one(self.pool)
+        .fetch_one(&mut *tx)
         .await?;
+
+        // Commit the transaction
+        tx.commit().await?;
 
         Ok(rec.id)
     }

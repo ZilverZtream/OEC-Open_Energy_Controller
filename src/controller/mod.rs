@@ -176,14 +176,14 @@ impl AppState {
 }
 
 pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
-    let controller = state.controller.clone();
+    let controller = Arc::clone(&state.controller);
     tokio::spawn(async move {
         if let Err(e) = controller.run(cfg.controller.tick_seconds).await {
             warn!(error=%e, "controller loop stopped");
         }
     });
 
-    let controller2 = state.controller.clone();
+    let controller2 = Arc::clone(&state.controller);
     tokio::spawn(async move {
         if let Err(e) = controller2
             .reoptimize_loop(cfg.controller.reoptimize_every_minutes)
@@ -210,14 +210,26 @@ pub struct BatteryController {
 }
 
 impl BatteryController {
-    pub async fn run(&self, tick_seconds: u64) -> Result<()> {
+    pub async fn run(self: Arc<Self>, tick_seconds: u64) -> Result<()> {
         let mut interval =
             tokio::time::interval(std::time::Duration::from_secs(tick_seconds.max(1)));
         loop {
             interval.tick().await;
-            let state = self.battery.read_state().await?;
+
+            // CRITICAL FIX: Capture timestamp BEFORE sensor polling to ensure
+            // accurate time-based calculations. Modbus polling can take 2-3s.
             let now_utc = Utc::now();
-            self.record_state(now_utc, state.clone()).await;
+            let state = self.battery.read_state().await?;
+
+            // CRITICAL FIX: Offload telemetry recording to background task
+            // to prevent DB write latency from blocking the critical control path.
+            // If record_state takes >1000ms (e.g., SD card stall), queueing up
+            // 1Hz writes can starve the DB connection pool for API reads.
+            let self_clone = Arc::clone(&self);
+            let state_clone = state.clone();
+            tokio::spawn(async move {
+                self_clone.record_state(now_utc, state_clone).await;
+            });
 
             // Get scheduled target power from optimizer
             let schedule_target_w = self
@@ -251,6 +263,7 @@ impl BatteryController {
                 state.soc_percent,
                 state.temperature_c,
                 grid_price_sek_kwh,
+                now_utc, // Use timestamp captured before sensor polling
             );
 
             // Pass schedule target to PowerFlowModel if available
@@ -319,7 +332,7 @@ impl BatteryController {
         }
     }
 
-    pub async fn reoptimize_loop(&self, every_minutes: u64) -> Result<()> {
+    pub async fn reoptimize_loop(self: Arc<Self>, every_minutes: u64) -> Result<()> {
         let mut interval =
             tokio::time::interval(std::time::Duration::from_secs(every_minutes.max(1) * 60));
         loop {

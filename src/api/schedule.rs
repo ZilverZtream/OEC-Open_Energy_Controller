@@ -4,13 +4,40 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use uuid::Uuid;
 
 use crate::{
     api::{error::ApiError, response::ApiResponse},
     controller::AppState,
 };
+
+/// Custom serializer to round f64 to 2 decimal places
+///
+/// CRITICAL FIX: Prevents JSON precision leak where f64 values like
+/// 1205.3333333333335 are serialized as-is, wasting bandwidth and
+/// implying false precision. Sensors are typically accurate to ~1-2 decimal places.
+fn round_f64_to_2dp<S>(value: &f64, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let rounded = (value * 100.0).round() / 100.0;
+    serializer.serialize_f64(rounded)
+}
+
+/// Custom serializer for Option<f64> to round to 2 decimal places
+fn round_option_f64_to_2dp<S>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(v) => {
+            let rounded = (v * 100.0).round() / 100.0;
+            serializer.serialize_some(&rounded)
+        }
+        None => serializer.serialize_none(),
+    }
+}
 
 /// Schedule response
 #[derive(Debug, Serialize)]
@@ -22,6 +49,7 @@ pub struct ScheduleResponse {
     valid_until: DateTime<Utc>,
     intervals: Vec<ScheduleInterval>,
     optimizer_version: Option<String>,
+    #[serde(serialize_with = "round_option_f64_to_2dp")]
     estimated_cost: Option<f64>,
 }
 
@@ -29,6 +57,7 @@ pub struct ScheduleResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduleInterval {
     timestamp: DateTime<Utc>,
+    #[serde(serialize_with = "round_f64_to_2dp")]
     power_w: f64,
 }
 
