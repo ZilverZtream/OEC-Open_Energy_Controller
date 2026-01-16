@@ -66,6 +66,7 @@ reqwest-retry = "0.6"
 
 # Configuration
 figment = { version = "0.10", features = ["env", "toml"] }
+dotenvy = "0.15"
 
 # Database
 sqlx = { version = "0.8", default-features = false, features = ["macros", "uuid", "chrono", "json"], optional = true }
@@ -142,4 +143,8 @@ testcontainers = "0.15"
 [profile.release]
 lto = true
 codegen-units = 1
+opt-level = 3
 panic = "abort"
+
+[profile.dev]
+opt-level = 1  # Faster debug builds

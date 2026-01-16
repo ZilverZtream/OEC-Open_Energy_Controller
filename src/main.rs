@@ -2,6 +2,8 @@ mod api;
 mod auth;
 mod config;
 mod controller;
+#[cfg(feature = "db")]
+mod database;
 mod discovery;
 mod domain;
 mod forecast;

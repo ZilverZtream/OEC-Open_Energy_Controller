@@ -4,10 +4,75 @@
 
 **Progress Tracking:**
 - Total items: ~850+ checkboxes
-- Completed items: ~200+ (as of 2026-01-16)
+- Completed items: ~240+ (as of 2026-01-16)
 - Logical ordering: Each section builds on previous
 - Parallelizable: Items within sections can be done concurrently
 - No time estimates: Work at your own pace with your team size
+
+## 🎯 Recent Completions (2026-01-16 - Fifth Update)
+### ✅ Phase 1: Cargo Dependencies & Build Configuration
+- Added `dotenvy = "0.15"` for environment variable management
+- Enhanced Cargo profile optimizations:
+  - Added `opt-level = 3` to release profile
+  - Added `opt-level = 1` to dev profile for faster debug builds
+- Updated `rust-toolchain.toml` to use stable channel for better compatibility
+
+### ✅ Phase 2: Core Domain Types with Type Safety
+- Implemented comprehensive newtype wrappers for physical units:
+  - `Power` (Watts) with kW conversion and arithmetic operations
+  - `Energy` (Watt-hours) with kWh conversion and arithmetic operations
+  - `Voltage` (Volts) with proper Display formatting
+  - `Current` (Amperes) with proper Display formatting
+  - `Temperature` (Celsius) with Fahrenheit and Kelvin conversions
+  - `Percentage` (0-100%) with automatic clamping and ratio conversion
+  - `Price` (SEK/kWh) with öre conversion and Energy multiplication
+- Added comprehensive unit tests (15+ test cases) for all newtypes
+- All types include serde serialization/deserialization support
+- Added Display and Debug implementations for all types
+
+### ✅ Phase 2: Domain Models - Forecast & Optimization
+- Created `src/domain/forecast.rs` with optimization structures:
+  - `ForecastConfidence` enum (High, Medium, Low) with accuracy scoring
+  - `OptimizationObjective` enum (7 objectives: MinimizeCost, MaximizeArbitrage, MaximizeSelfConsumption, etc.)
+  - `Constraints` struct with 15+ constraint fields (SoC limits, power limits, grid limits, EV deadlines, etc.)
+  - Comprehensive validation for all constraints
+  - Helper methods for SoC, charge, and discharge power validation
+- Added 12+ unit tests for forecast and optimization domain
+- Integrated forecast module into domain exports
+
+### ✅ Phase 3: Database Layer - Models & Configuration
+- Created comprehensive database models in `src/database/models/`:
+  - `Device` model with `DeviceType` enum and online status checking
+  - `BatteryStateRow` with domain conversion methods
+  - `ScheduleRow` with active/expired status and duration calculations
+  - `ElectricityPriceRow` with Nordpool detection and öre conversion
+  - All models include `sqlx::FromRow` derives and comprehensive tests
+- Implemented `Database` connection manager with:
+  - `DatabaseConfig` struct with environment variable loading
+  - Connection pool with configurable limits and timeouts
+  - Automatic retry logic with exponential backoff (5 attempts)
+  - Health check query (`SELECT 1`)
+  - Graceful shutdown support
+- Added 15+ unit tests for database models and configuration
+- Integrated database module into `src/main.rs` with feature gating
+
+### ✅ Phase 0: Infrastructure - Docker Compose
+- Enhanced `docker-compose.yml` with complete monitoring stack:
+  - PostgreSQL with TimescaleDB extension for time-series data
+  - Prometheus for metrics collection (port 9090)
+  - Grafana for visualization (port 3000)
+  - pgAdmin for database management (port 5050, optional with --profile tools)
+  - Health checks for all services
+  - Proper networking and volume management
+- Created `config/prometheus.yml` with scrape configurations:
+  - Energy controller metrics endpoint
+  - Prometheus self-monitoring
+  - PostgreSQL exporter (ready to enable)
+
+### ✅ Build Verification
+- Verified successful compilation with all features
+- Fixed Rust version compatibility issues
+- Build completes with 0 errors (only warnings for unused code)
 
 ## 🎯 Recent Completions (2026-01-16 - Fourth Update)
 ### ✅ Phase 0: Project Bootstrap - Additional Directories
@@ -275,7 +340,7 @@
 - [x] Create `config/development.toml`
 - [x] Create `config/test.toml`
 - [x] Create `config/production.toml`
-- [ ] Create `docker-compose.yml` (postgres, grafana, prometheus)
+- [x] Create `docker-compose.yml` (postgres, grafana, prometheus)
 - [x] Create `docker-compose.test.yml` (for testing)
 - [ ] Create `Dockerfile` for production build
 - [x] Create `Dockerfile.dev` for development
@@ -310,8 +375,8 @@
 - [x] Add `bincode = "1.3"` (binary serialization for performance)
 
 ### Cargo.toml - Configuration
-- [ ] Add `config = { version = "0.14", features = ["toml", "yaml"] }`
-- [ ] Add `dotenvy = "0.15"`
+- [x] Add `config = { version = "0.14", features = ["toml", "yaml"] }` (using figment instead)
+- [x] Add `dotenvy = "0.15"`
 
 ### Cargo.toml - Web Framework (Axum)
 - [ ] Add `axum = { version = "0.7", features = ["macros", "ws"] }`
@@ -431,30 +496,30 @@
 - [ ] Add `dev-tools = []` feature (extra dev dependencies)
 
 ### Cargo.toml - Profile Optimizations
-- [ ] Add `[profile.release]` with `lto = true`
-- [ ] Add `codegen-units = 1` to release profile
-- [ ] Add `opt-level = 3` to release profile
-- [ ] Add `[profile.dev]` with `opt-level = 1` (faster debug builds)
+- [x] Add `[profile.release]` with `lto = true`
+- [x] Add `codegen-units = 1` to release profile
+- [x] Add `opt-level = 3` to release profile
+- [x] Add `[profile.dev]` with `opt-level = 1` (faster debug builds)
 
 ---
 
 ## 📋 PHASE 2: DOMAIN MODELS & CORE TYPES
 
 ### Core Domain Types
-- [ ] Create `src/domain/mod.rs`
-- [ ] Create `src/domain/types.rs` (common types: Power, Energy, Voltage, etc.)
-- [ ] Implement `Power` newtype (Watts)
-- [ ] Implement `Energy` newtype (Watt-hours)
-- [ ] Implement `Voltage` newtype (Volts)
-- [ ] Implement `Current` newtype (Amperes)
-- [ ] Implement `Temperature` newtype (Celsius)
-- [ ] Implement `Percentage` newtype (0-100%)
-- [ ] Implement `Price` newtype (SEK/kWh)
+- [x] Create `src/domain/mod.rs`
+- [x] Create `src/domain/types.rs` (common types: Power, Energy, Voltage, etc.)
+- [x] Implement `Power` newtype (Watts)
+- [x] Implement `Energy` newtype (Watt-hours)
+- [x] Implement `Voltage` newtype (Volts)
+- [x] Implement `Current` newtype (Amperes)
+- [x] Implement `Temperature` newtype (Celsius)
+- [x] Implement `Percentage` newtype (0-100%)
+- [x] Implement `Price` newtype (SEK/kWh)
 - [ ] Implement `Duration` type helpers
 - [ ] Implement `Timestamp` type helpers
 - [x] Add unit tests for all domain types
-- [ ] Add `Display` and `Debug` implementations
-- [ ] Add `serde` serialization for all types
+- [x] Add `Display` and `Debug` implementations
+- [x] Add `serde` serialization for all types
 
 ### Battery Domain
 - [x] Create `src/domain/battery/mod.rs`
@@ -513,25 +578,25 @@
 - [x] Add unit tests for grid domain
 
 ### Schedule & Optimization Domain
-- [ ] Create `src/domain/schedule.rs`
-- [ ] Create `Schedule` struct (time-series of power setpoints)
+- [x] Create `src/domain/schedule.rs`
+- [x] Create `Schedule` struct (time-series of power setpoints)
 - [x] Create `ScheduleInterval` struct (start time, end time, power)
-- [ ] Implement `Schedule::power_at(timestamp: DateTime) -> Power` method
+- [x] Implement `Schedule::power_at(timestamp: DateTime) -> Power` method
 - [x] Implement `Schedule::validate()` method (check bounds, gaps, etc.)
-- [ ] Create `OptimizationObjective` enum (MinimizeCost, MaximizeArbitrage, etc.)
-- [ ] Create `Constraints` struct (min SoC, max cycles, grid limits)
+- [x] Create `OptimizationObjective` enum (MinimizeCost, MaximizeArbitrage, etc.)
+- [x] Create `Constraints` struct (min SoC, max cycles, grid limits)
 - [x] Add unit tests for schedule logic
 
 ### Forecast Domain
-- [ ] Create `src/domain/forecast.rs`
-- [ ] Create `PricePoint` struct (timestamp, price, confidence)
+- [x] Create `src/domain/forecast.rs`
+- [x] Create `PricePoint` struct (timestamp, price, confidence)
 - [ ] Create `PriceForecast` struct (Vec<PricePoint>)
-- [ ] Create `ConsumptionPoint` struct (timestamp, power, confidence)
+- [x] Create `ConsumptionPoint` struct (timestamp, power, confidence)
 - [ ] Create `ConsumptionForecast` struct
-- [ ] Create `ProductionPoint` struct (timestamp, power, confidence)
+- [x] Create `ProductionPoint` struct (timestamp, power, confidence)
 - [ ] Create `ProductionForecast` struct
-- [ ] Create `Forecast24h` struct (combines price, consumption, production)
-- [ ] Create `ForecastConfidence` enum (High, Medium, Low)
+- [x] Create `Forecast24h` struct (combines price, consumption, production)
+- [x] Create `ForecastConfidence` enum (High, Medium, Low)
 - [ ] Add interpolation method for forecasts
 - [x] Add unit tests for forecast structures
 
@@ -540,14 +605,14 @@
 ## 📋 PHASE 3: DATABASE LAYER
 
 ### Database Configuration
-- [ ] Create `src/database/mod.rs`
-- [ ] Create `src/database/config.rs`
-- [ ] Create `DatabaseConfig` struct (connection string, pool size, etc.)
-- [ ] Implement `DatabaseConfig::from_env()` method
-- [ ] Create database connection pool initialization
-- [ ] Add connection retry logic with exponential backoff
-- [ ] Add health check query (`SELECT 1`)
-- [ ] Implement graceful shutdown for DB connections
+- [x] Create `src/database/mod.rs`
+- [x] Create `src/database/config.rs`
+- [x] Create `DatabaseConfig` struct (connection string, pool size, etc.)
+- [x] Implement `DatabaseConfig::from_env()` method
+- [x] Create database connection pool initialization
+- [x] Add connection retry logic with exponential backoff
+- [x] Add health check query (`SELECT 1`)
+- [x] Implement graceful shutdown for DB connections
 
 ### Migration Files
 - [x] Create `migrations/20250101000000_initial_schema.sql`
@@ -574,19 +639,19 @@
 - [ ] Create views for common queries
 
 ### Database Models (SQLx)
-- [ ] Create `src/database/models/mod.rs`
-- [ ] Create `src/database/models/device.rs`
-- [ ] Create `Device` struct matching DB schema
-- [ ] Implement `sqlx::FromRow` for `Device`
-- [ ] Create `DeviceType` enum matching DB
-- [ ] Create `src/database/models/battery_state.rs`
-- [ ] Create `BatteryStateRow` struct
-- [ ] Create `src/database/models/schedule.rs`
-- [ ] Create `ScheduleRow` struct
-- [ ] Create `src/database/models/price.rs`
-- [ ] Create `ElectricityPriceRow` struct
-- [ ] Add conversion methods from domain types to DB models
-- [ ] Add conversion methods from DB models to domain types
+- [x] Create `src/database/models/mod.rs`
+- [x] Create `src/database/models/device.rs`
+- [x] Create `Device` struct matching DB schema
+- [x] Implement `sqlx::FromRow` for `Device`
+- [x] Create `DeviceType` enum matching DB
+- [x] Create `src/database/models/battery_state.rs`
+- [x] Create `BatteryStateRow` struct
+- [x] Create `src/database/models/schedule.rs`
+- [x] Create `ScheduleRow` struct
+- [x] Create `src/database/models/price.rs`
+- [x] Create `ElectricityPriceRow` struct
+- [x] Add conversion methods from domain types to DB models
+- [x] Add conversion methods from DB models to domain types
 
 ### Repository Pattern - Device Repository
 - [x] Create `src/database/repositories/mod.rs`
