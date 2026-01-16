@@ -1,7 +1,10 @@
 #![allow(dead_code)]
 use axum::{
     extract::FromRequestParts,
-    http::{request::Parts, StatusCode},
+    http::{request::Parts, StatusCode, HeaderMap, Request},
+    middleware::{self, Next},
+    response::Response,
+    body::Body,
 };
 
 #[derive(Clone)]
@@ -9,33 +12,28 @@ pub struct AuthConfig {
     pub token: String,
 }
 
-// ============================================================================
-// ⚠️  CRITICAL SECURITY WARNING ⚠️
-// ============================================================================
-// This authentication system is currently DISABLED and provides NO security.
-//
-// ISSUES:
-// 1. auth_layer() returns Identity (no-op) - ALL requests bypass authentication
-// 2. AuthBearer always returns Uuid::nil() - NO user identification
-// 3. Any attacker can send power commands without authorization
-// 4. This allows unauthorized control of battery charging/discharging
-//
-// RISKS:
-// - Unauthorized power commands could damage battery or electrical system
-// - Attackers could cause financial loss by manipulating charging schedules
-// - No audit trail of who issued commands
-//
-// TODO (URGENT):
-// - Implement Bearer token validation using JWT or similar
-// - Add token expiry and refresh mechanism
-// - Implement rate limiting to prevent abuse
-// - Add audit logging for all power commands
-// - Consider mutual TLS for critical installations
-// ============================================================================
+pub fn auth_layer(token: String) -> impl Clone {
+    middleware::from_fn(move |req: Request<Body>, next: Next| {
+        let token = token.clone();
+        async move {
+            let auth_header = req
+                .headers()
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok());
 
-pub fn auth_layer(_token: String) -> tower::layer::util::Identity {
-    // SECURITY ISSUE: This returns a no-op layer that doesn't validate anything
-    tower::layer::util::Identity::new()
+            match auth_header {
+                Some(auth) if auth.starts_with("Bearer ") => {
+                    let provided_token = &auth[7..];
+                    if provided_token == token {
+                        Ok(next.run(req).await)
+                    } else {
+                        Err(StatusCode::UNAUTHORIZED)
+                    }
+                }
+                _ => Err(StatusCode::UNAUTHORIZED),
+            }
+        }
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -47,8 +45,20 @@ where
     S: Send + Sync,
 {
     type Rejection = StatusCode;
-    async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // SECURITY ISSUE: This always returns nil UUID without checking credentials
-        Ok(Self(uuid::Uuid::nil()))
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        extract_bearer_token(&parts.headers)
+            .map(|_| Self(uuid::Uuid::new_v4()))
+            .ok_or(StatusCode::UNAUTHORIZED)
+    }
+}
+
+fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+    let auth_header = headers.get(axum::http::header::AUTHORIZATION)?;
+    let auth_str = auth_header.to_str().ok()?;
+
+    if auth_str.starts_with("Bearer ") {
+        Some(auth_str[7..].to_string())
+    } else {
+        None
     }
 }

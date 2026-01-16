@@ -1,10 +1,10 @@
 [server]
-host = "0.0.0.0"
+host = "127.0.0.1"
 port = 8080
+enable_cors = false
 
 [auth]
-# Set via environment variable: OEC_AUTH_TOKEN
-token = ""
+token = "__SET_VIA_ENV_OEC__AUTH__TOKEN__"
 
 [controller]
 tick_seconds = 10
@@ -58,8 +58,7 @@ max_soc_percent = 95.0
 max_cycles_per_day = 2
 
 [db]
-# Set via environment variable: OEC_DB_URL
-url = "postgres://oec:oec@postgres:5432/oec"
+url = "__SET_VIA_ENV_OEC__DATABASE__URL__"
 max_connections = 20
 
 [logging]

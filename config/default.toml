@@ -26,4 +26,4 @@ http_timeout_seconds = 10
 cache_ttl_seconds = 3600
 
 [db]
-url = "postgres://oec:oec@127.0.0.1:5432/oec"
+url = "postgres://oec:changeme@127.0.0.1:5432/oec"
