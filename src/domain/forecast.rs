@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 

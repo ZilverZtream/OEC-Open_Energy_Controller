@@ -1,7 +1,8 @@
+#![allow(dead_code)]
 use std::sync::Arc;
 
 use crate::domain::{
-    Battery, BatteryCapabilities, BatteryChemistry, BatteryState, BatteryStatus, EvCharger,
+    Battery, BatteryCapabilities, BatteryState, BatteryStatus, EvCharger,
     Inverter, InverterCapabilities, InverterMode, InverterState, InverterStatus,
     SimulatedBattery, SimulatedEvCharger, SimulatedInverter,
 };

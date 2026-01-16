@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Weather forecast API endpoints
 
 use axum::{

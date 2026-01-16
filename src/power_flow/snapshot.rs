@@ -1,7 +1,7 @@
+#![allow(dead_code)]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::domain::types::Power;
 
 /// Power snapshot representing all energy flows at a single point in time
 ///

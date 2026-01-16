@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Feature engineering for forecasting models
 //!
 //! This module extracts features from time series data for use in ML models

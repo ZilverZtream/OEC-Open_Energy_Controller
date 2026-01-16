@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(dead_code)]
 //! OCPP 1.6 Message Definitions
 //!
 //! This module defines the message payloads for various OCPP operations.

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -53,7 +54,7 @@ pub struct OptimizationRun {
 
 /// POST /api/v1/optimize/trigger - Force trigger optimization
 pub async fn trigger_optimization(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(request): Json<TriggerOptimizationRequest>,
 ) -> Result<Json<ApiResponse<OptimizationResult>>, ApiError> {
     tracing::info!(force = request.force, "Triggering optimization");

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! ML Model Training Pipeline
 //!
 //! This module provides functionality for training ML models offline.

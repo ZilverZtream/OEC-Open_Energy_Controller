@@ -1,4 +1,5 @@
-use anyhow::{Context, Result};
+#![allow(dead_code)]
+use anyhow::Result;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use tokio::net::TcpStream;

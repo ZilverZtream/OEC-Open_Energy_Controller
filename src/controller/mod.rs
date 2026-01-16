@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod pid;
 
 use anyhow::{bail, Result};
@@ -20,7 +21,6 @@ use crate::forecast::{
 };
 use crate::optimizer::{BatteryOptimizer, Constraints, DynamicProgrammingOptimizer, SystemState};
 use crate::repo::Repositories;
-pub use pid::{PidController, PowerPidController};
 
 #[derive(Clone)]
 pub struct AppState {

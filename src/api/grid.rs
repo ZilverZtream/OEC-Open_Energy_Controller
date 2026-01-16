@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Grid connection API endpoints
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};

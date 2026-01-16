@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -11,7 +12,7 @@ use crate::{
     auth::AuthBearer,
     config::Config,
     controller::AppState,
-    domain::{BatteryState, Forecast24h, PriceArea, Schedule, ScheduleEntry},
+    domain::{BatteryState, PriceArea, Schedule, ScheduleEntry},
 };
 
 pub fn router(state: AppState, cfg: &Config) -> Router {

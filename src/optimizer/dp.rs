@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, Local};
@@ -97,22 +98,21 @@ fn simulate_action(
     let price = forecast.prices[t].price_sek_per_kwh;
 
     let mut next = soc_bucket as i64;
-    let mut target_power_w: f64 = 0.0;
     let cycle_penalty = 0.001;
 
-    match action {
+    let mut target_power_w: f64 = match action {
         Action::Charge => {
             next += 1;
-            target_power_w = 2000.0;
+            2000.0
         }
         Action::Discharge => {
             next -= 1;
-            target_power_w = -2000.0;
+            -2000.0
         }
         Action::Idle => {
-            target_power_w = 0.0;
+            0.0
         }
-    }
+    };
 
     let min_b = bucket(constraints.min_soc_percent);
     let max_b = bucket(constraints.max_soc_percent);

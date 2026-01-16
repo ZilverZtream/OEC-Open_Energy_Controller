@@ -1,7 +1,8 @@
+#![allow(dead_code)]
 use chrono::{DateTime, FixedOffset, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::ops::{Add, Sub, Mul, Div};
+use std::ops::{Add, Sub, Mul};
 
 // ============================================================================
 // Time Helper Types

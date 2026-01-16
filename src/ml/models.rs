@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! ML Model Definitions
 //!
 //! This module contains concrete ML model implementations for various forecasting tasks.

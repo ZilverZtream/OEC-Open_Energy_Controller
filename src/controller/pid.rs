@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// PID (Proportional-Integral-Derivative) Controller
 ///
 /// A PID controller continuously calculates an error value as the difference
@@ -10,7 +11,7 @@
 /// - **D (Derivative)**: Responds to the rate of error change
 ///
 /// Output = Kp * error + Ki * ∫error*dt + Kd * d(error)/dt
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct PidController {
