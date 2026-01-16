@@ -39,9 +39,14 @@ pub struct SimulatedBattery {
 
 impl SimulatedBattery {
     pub fn new(initial: BatteryState, caps: BatteryCapabilities) -> Self {
-        Self { state: Arc::new(RwLock::new(initial)), caps }
+        Self {
+            state: Arc::new(RwLock::new(initial)),
+            caps,
+        }
     }
-    fn clamp_soc(soc: f64) -> f64 { soc.clamp(0.0, 100.0) }
+    fn clamp_soc(soc: f64) -> f64 {
+        soc.clamp(0.0, 100.0)
+    }
 }
 
 #[async_trait]
@@ -60,14 +65,20 @@ impl Battery for SimulatedBattery {
 
         let power_kw = watts / 1000.0;
         let eff = self.caps.efficiency.clamp(0.01, 1.0);
-        let delta_kwh = if power_kw >= 0.0 { power_kw * dt_h * eff } else { power_kw * dt_h / eff };
+        let delta_kwh = if power_kw >= 0.0 {
+            power_kw * dt_h * eff
+        } else {
+            power_kw * dt_h / eff
+        };
         let delta_pct = (delta_kwh / cap_kwh) * 100.0;
         st.soc_percent = Self::clamp_soc(st.soc_percent + delta_pct);
 
         Ok(())
     }
 
-    fn capabilities(&self) -> BatteryCapabilities { self.caps.clone() }
+    fn capabilities(&self) -> BatteryCapabilities {
+        self.caps.clone()
+    }
 }
 
 pub struct MockBattery {
@@ -77,7 +88,10 @@ pub struct MockBattery {
 
 impl MockBattery {
     pub fn new(states: VecDeque<BatteryState>, caps: BatteryCapabilities) -> Self {
-        Self { states: Arc::new(RwLock::new(states)), caps }
+        Self {
+            states: Arc::new(RwLock::new(states)),
+            caps,
+        }
     }
 }
 
@@ -85,8 +99,18 @@ impl MockBattery {
 impl Battery for MockBattery {
     async fn read_state(&self) -> Result<BatteryState> {
         let mut q = self.states.write().await;
-        Ok(q.pop_front().unwrap_or(BatteryState { soc_percent: 50.0, power_w: 0.0, voltage_v: 48.0, temperature_c: 25.0, health_percent: 100.0 }))
+        Ok(q.pop_front().unwrap_or(BatteryState {
+            soc_percent: 50.0,
+            power_w: 0.0,
+            voltage_v: 48.0,
+            temperature_c: 25.0,
+            health_percent: 100.0,
+        }))
     }
-    async fn set_power(&self, _watts: f64) -> Result<()> { Ok(()) }
-    fn capabilities(&self) -> BatteryCapabilities { self.caps.clone() }
+    async fn set_power(&self, _watts: f64) -> Result<()> {
+        Ok(())
+    }
+    fn capabilities(&self) -> BatteryCapabilities {
+        self.caps.clone()
+    }
 }

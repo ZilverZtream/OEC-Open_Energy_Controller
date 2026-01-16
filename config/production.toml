@@ -1,0 +1,72 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[auth]
+# Set via environment variable: OEC_AUTH_TOKEN
+token = ""
+
+[controller]
+tick_seconds = 10
+reoptimize_every_minutes = 30
+default_area = "SE3"
+default_horizon_hours = 24
+
+[battery]
+# Real battery configuration - set per installation
+capacity_kwh = 10.0
+initial_soc_percent = 50.0
+max_charge_kw = 5.0
+max_discharge_kw = 5.0
+efficiency = 0.92
+degradation_per_cycle = 0.001
+min_soc_percent = 20.0
+max_soc_percent = 95.0
+
+[inverter]
+rated_power_kw = 10.0
+max_dc_input_kw = 15.0
+efficiency = 0.975
+
+[ev_charger]
+max_current_amps = 32.0
+min_current_amps = 6.0
+phases = 3
+voltage_v = 230.0
+
+[grid]
+fuse_rating_amps = 25.0
+max_import_kw = 17.25
+max_export_kw = 17.25
+
+[prices]
+provider = "elprisetjustnu"
+base_url = "https://www.elprisetjustnu.se"
+http_timeout_seconds = 10
+cache_ttl_seconds = 1800
+
+[forecast]
+use_ml_models = false
+weather_provider = "smhi"
+weather_api_url = "https://opendata-download-metfcst.smhi.se"
+
+[optimizer]
+strategy = "dynamic_programming"
+horizon_hours = 24
+min_soc_percent = 20.0
+max_soc_percent = 95.0
+max_cycles_per_day = 2
+
+[db]
+# Set via environment variable: OEC_DB_URL
+url = "postgres://oec:oec@postgres:5432/oec"
+max_connections = 20
+
+[logging]
+level = "info"
+format = "json"
+
+[telemetry]
+enable_metrics = true
+enable_tracing = true
+metrics_port = 9090

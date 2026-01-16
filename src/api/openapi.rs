@@ -1,13 +1,13 @@
-#[cfg(feature="swagger")]
+#[cfg(feature = "swagger")]
 use utoipa::OpenApi;
 
-#[cfg(feature="swagger")]
+#[cfg(feature = "swagger")]
 use crate::api::v1::{OptimizeRequest, SystemStatus};
 
-#[cfg(feature="swagger")]
+#[cfg(feature = "swagger")]
 use crate::domain::{Forecast24h, PriceArea, Schedule};
 
-#[cfg(feature="swagger")]
+#[cfg(feature = "swagger")]
 #[derive(OpenApi)]
 #[openapi(
     paths(

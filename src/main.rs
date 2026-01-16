@@ -5,6 +5,7 @@ mod controller;
 mod discovery;
 mod domain;
 mod forecast;
+mod hardware;
 mod modbus;
 mod optimizer;
 mod repo;
@@ -26,10 +27,14 @@ async fn main() -> Result<()> {
     let mut app: Router = api::router(app_state.clone(), &cfg);
 
     #[cfg(feature = "swagger")]
-    { app = api::with_swagger(app); }
+    {
+        app = api::with_swagger(app);
+    }
 
     #[cfg(feature = "metrics")]
-    { app = api::with_metrics(app); }
+    {
+        app = api::with_metrics(app);
+    }
 
     let addr = cfg.server.socket_addr()?;
     info!(%addr, "starting Open Energy Controller");

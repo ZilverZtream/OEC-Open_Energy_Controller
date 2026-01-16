@@ -1,0 +1,209 @@
+use std::sync::Arc;
+
+use crate::domain::{
+    Battery, BatteryCapabilities, BatteryState, EvCharger, Inverter, InverterCapabilities,
+    InverterMode, InverterState, InverterStatus, SimulatedBattery, SimulatedEvCharger,
+    SimulatedInverter,
+};
+
+/// Hardware mode configuration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HardwareMode {
+    /// Simulated devices for development and testing
+    Simulated,
+    /// Real hardware via Modbus TCP
+    #[allow(dead_code)]
+    Modbus,
+    /// Mock devices with pre-programmed responses
+    #[allow(dead_code)]
+    Mock,
+}
+
+/// Factory for creating hardware device instances
+pub struct DeviceFactory {
+    mode: HardwareMode,
+}
+
+impl DeviceFactory {
+    pub fn new(mode: HardwareMode) -> Self {
+        Self { mode }
+    }
+
+    /// Create a battery instance based on hardware mode
+    pub fn create_battery(
+        &self,
+        caps: BatteryCapabilities,
+        initial_soc: f64,
+    ) -> Arc<dyn Battery> {
+        match self.mode {
+            HardwareMode::Simulated => {
+                let initial = BatteryState {
+                    soc_percent: initial_soc,
+                    power_w: 0.0,
+                    voltage_v: 48.0,
+                    temperature_c: 25.0,
+                    health_percent: 100.0,
+                };
+                Arc::new(SimulatedBattery::new(initial, caps))
+            }
+            HardwareMode::Modbus => {
+                // TODO: Implement Modbus battery
+                tracing::warn!("Modbus battery not yet implemented, falling back to simulated");
+                let initial = BatteryState {
+                    soc_percent: initial_soc,
+                    power_w: 0.0,
+                    voltage_v: 48.0,
+                    temperature_c: 25.0,
+                    health_percent: 100.0,
+                };
+                Arc::new(SimulatedBattery::new(initial, caps))
+            }
+            HardwareMode::Mock => {
+                // TODO: Implement Mock battery with pre-programmed responses
+                tracing::warn!("Mock battery not yet implemented, falling back to simulated");
+                let initial = BatteryState {
+                    soc_percent: initial_soc,
+                    power_w: 0.0,
+                    voltage_v: 48.0,
+                    temperature_c: 25.0,
+                    health_percent: 100.0,
+                };
+                Arc::new(SimulatedBattery::new(initial, caps))
+            }
+        }
+    }
+
+    /// Create an EV charger instance based on hardware mode
+    pub fn create_ev_charger(&self) -> Arc<dyn EvCharger> {
+        match self.mode {
+            HardwareMode::Simulated => Arc::new(SimulatedEvCharger::default_charger()),
+            HardwareMode::Modbus => {
+                // TODO: Implement OCPP EV charger
+                tracing::warn!("OCPP charger not yet implemented, falling back to simulated");
+                Arc::new(SimulatedEvCharger::default_charger())
+            }
+            HardwareMode::Mock => {
+                tracing::warn!("Mock charger not yet implemented, falling back to simulated");
+                Arc::new(SimulatedEvCharger::default_charger())
+            }
+        }
+    }
+
+    /// Create an inverter instance based on hardware mode
+    pub fn create_inverter(&self, caps: InverterCapabilities) -> Arc<dyn Inverter> {
+        match self.mode {
+            HardwareMode::Simulated => {
+                let initial = InverterState {
+                    mode: InverterMode::GridTied,
+                    pv_power_w: 0.0,
+                    ac_output_power_w: 0.0,
+                    dc_input_power_w: 0.0,
+                    grid_frequency_hz: 50.0,
+                    ac_voltage_v: 230.0,
+                    dc_voltage_v: 400.0,
+                    temperature_c: 35.0,
+                    efficiency_percent: 97.0,
+                    status: InverterStatus::Normal,
+                    daily_energy_kwh: 0.0,
+                    total_energy_kwh: 0.0,
+                };
+                Arc::new(SimulatedInverter::new(initial, caps))
+            }
+            HardwareMode::Modbus => {
+                // TODO: Implement Modbus inverter
+                tracing::warn!("Modbus inverter not yet implemented, falling back to simulated");
+                let initial = InverterState {
+                    mode: InverterMode::GridTied,
+                    pv_power_w: 0.0,
+                    ac_output_power_w: 0.0,
+                    dc_input_power_w: 0.0,
+                    grid_frequency_hz: 50.0,
+                    ac_voltage_v: 230.0,
+                    dc_voltage_v: 400.0,
+                    temperature_c: 35.0,
+                    efficiency_percent: 97.0,
+                    status: InverterStatus::Normal,
+                    daily_energy_kwh: 0.0,
+                    total_energy_kwh: 0.0,
+                };
+                Arc::new(SimulatedInverter::new(initial, caps))
+            }
+            HardwareMode::Mock => {
+                tracing::warn!("Mock inverter not yet implemented, falling back to simulated");
+                let initial = InverterState {
+                    mode: InverterMode::GridTied,
+                    pv_power_w: 0.0,
+                    ac_output_power_w: 0.0,
+                    dc_input_power_w: 0.0,
+                    grid_frequency_hz: 50.0,
+                    ac_voltage_v: 230.0,
+                    dc_voltage_v: 400.0,
+                    temperature_c: 35.0,
+                    efficiency_percent: 97.0,
+                    status: InverterStatus::Normal,
+                    daily_energy_kwh: 0.0,
+                    total_energy_kwh: 0.0,
+                };
+                Arc::new(SimulatedInverter::new(initial, caps))
+            }
+        }
+    }
+}
+
+impl Default for DeviceFactory {
+    fn default() -> Self {
+        Self::new(HardwareMode::Simulated)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_factory_creates_simulated_battery() {
+        let factory = DeviceFactory::new(HardwareMode::Simulated);
+        let caps = BatteryCapabilities {
+            capacity_kwh: 10.0,
+            max_charge_kw: 5.0,
+            max_discharge_kw: 5.0,
+            efficiency: 0.92,
+            degradation_per_cycle: 0.001,
+        };
+
+        let battery = factory.create_battery(caps, 50.0);
+        let state = battery.read_state().await.unwrap();
+
+        assert_eq!(state.soc_percent, 50.0);
+        assert_eq!(state.power_w, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_factory_creates_ev_charger() {
+        let factory = DeviceFactory::new(HardwareMode::Simulated);
+        let charger = factory.create_ev_charger();
+        let state = charger.read_state().await.unwrap();
+
+        assert!(!state.connected);
+        assert!(!state.charging);
+    }
+
+    #[tokio::test]
+    async fn test_factory_creates_inverter() {
+        let factory = DeviceFactory::new(HardwareMode::Simulated);
+        let caps = InverterCapabilities {
+            rated_power_w: 10000.0,
+            max_dc_input_w: 15000.0,
+            max_ac_output_w: 10000.0,
+            max_efficiency_percent: 97.5,
+            mppt_channels: 2,
+            supports_export_limit: true,
+            supports_frequency_regulation: true,
+        };
+
+        let inverter = factory.create_inverter(caps);
+        let state = inverter.read_state().await.unwrap();
+
+        assert_eq!(state.mode, InverterMode::GridTied);
+    }
+}

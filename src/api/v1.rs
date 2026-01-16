@@ -7,9 +7,16 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{auth::AuthBearer, config::Config, controller::AppState, domain::{Forecast24h, PriceArea, Schedule, ScheduleEntry, BatteryState}};
+use crate::{
+    auth::AuthBearer,
+    config::Config,
+    controller::AppState,
+    domain::{BatteryState, Forecast24h, PriceArea, Schedule, ScheduleEntry},
+};
 
 pub fn router(state: AppState, cfg: &Config) -> Router {
+    use crate::api::{ev_charger, inverter};
+
     Router::new()
         .route("/status", get(get_status))
         .route("/forecast", get(get_forecast))
@@ -18,13 +25,27 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
         .route("/devices", get(list_devices))
         .route("/simulation/step", post(simulation_step))
         .route("/healthz", get(healthz))
+        // EV Charger routes
+        .route("/ev-charger/state", get(ev_charger::get_charger_state))
+        .route("/ev-charger/current", post(ev_charger::set_charging_current))
+        .route("/ev-charger/start", post(ev_charger::start_charging))
+        .route("/ev-charger/stop", post(ev_charger::stop_charging))
+        .route("/ev-charger/sessions", get(ev_charger::get_charging_sessions))
+        // Inverter routes
+        .route("/inverter/state", get(inverter::get_inverter_state))
+        .route("/inverter/mode", post(inverter::set_inverter_mode))
+        .route("/inverter/export-limit", post(inverter::set_export_limit))
+        .route("/inverter/production", get(inverter::get_production_history))
+        .route("/inverter/efficiency", get(inverter::get_efficiency_stats))
         .with_state(state)
         .layer(crate::auth::auth_layer(cfg.auth.token.clone()))
 }
 
-pub async fn healthz() -> impl IntoResponse { StatusCode::OK }
+pub async fn healthz() -> impl IntoResponse {
+    StatusCode::OK
+}
 
-#[cfg_attr(feature="swagger", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Serialize)]
 pub struct SystemStatus {
     pub battery: BatteryState,
@@ -32,20 +53,43 @@ pub struct SystemStatus {
     pub forecast_updated_at: Option<String>,
 }
 
-pub async fn get_status(State(st): State<AppState>, AuthBearer(_): AuthBearer) -> impl IntoResponse {
+pub async fn get_status(
+    State(st): State<AppState>,
+    AuthBearer(_): AuthBearer,
+) -> impl IntoResponse {
     match st.controller.get_current_state().await {
         Ok(battery_state) => {
-            let schedule_next_4h = st.controller.get_schedule().await.map(|s| s.next_hours(4)).unwrap_or_default();
-            (StatusCode::OK, Json(SystemStatus { battery: battery_state, schedule_next_4h, forecast_updated_at: None })).into_response()
+            let schedule_next_4h = st
+                .controller
+                .get_schedule()
+                .await
+                .map(|s| s.next_hours(4))
+                .unwrap_or_default();
+            (
+                StatusCode::OK,
+                Json(SystemStatus {
+                    battery: battery_state,
+                    schedule_next_4h,
+                    forecast_updated_at: None,
+                }),
+            )
+                .into_response()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err(e))).into_response(),
     }
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ForecastQuery { pub horizon_hours: Option<u32>, pub area: Option<PriceArea> }
+pub struct ForecastQuery {
+    pub horizon_hours: Option<u32>,
+    pub area: Option<PriceArea>,
+}
 
-pub async fn get_forecast(State(st): State<AppState>, AuthBearer(_): AuthBearer, Query(q): Query<ForecastQuery>) -> impl IntoResponse {
+pub async fn get_forecast(
+    State(st): State<AppState>,
+    AuthBearer(_): AuthBearer,
+    Query(q): Query<ForecastQuery>,
+) -> impl IntoResponse {
     let _ = q.horizon_hours;
     let area = q.area.unwrap_or(PriceArea::SE3);
     match st.controller.get_forecast(area).await {
@@ -54,21 +98,35 @@ pub async fn get_forecast(State(st): State<AppState>, AuthBearer(_): AuthBearer,
     }
 }
 
-pub async fn get_schedule(State(st): State<AppState>, AuthBearer(_): AuthBearer) -> impl IntoResponse {
+pub async fn get_schedule(
+    State(st): State<AppState>,
+    AuthBearer(_): AuthBearer,
+) -> impl IntoResponse {
     let s: Option<Schedule> = st.controller.get_schedule().await;
     (StatusCode::OK, Json(s)).into_response()
 }
 
-pub async fn set_schedule(State(st): State<AppState>, AuthBearer(_): AuthBearer, Json(schedule): Json<Schedule>) -> impl IntoResponse {
+pub async fn set_schedule(
+    State(st): State<AppState>,
+    AuthBearer(_): AuthBearer,
+    Json(schedule): Json<Schedule>,
+) -> impl IntoResponse {
     st.controller.set_schedule(schedule).await;
     StatusCode::NO_CONTENT
 }
 
-#[cfg_attr(feature="swagger", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Deserialize)]
-pub struct OptimizeRequest { pub horizon_hours: u32, pub area: PriceArea }
+pub struct OptimizeRequest {
+    pub horizon_hours: u32,
+    pub area: PriceArea,
+}
 
-pub async fn trigger_optimization(State(st): State<AppState>, AuthBearer(_): AuthBearer, Json(req): Json<OptimizeRequest>) -> impl IntoResponse {
+pub async fn trigger_optimization(
+    State(st): State<AppState>,
+    AuthBearer(_): AuthBearer,
+    Json(req): Json<OptimizeRequest>,
+) -> impl IntoResponse {
     let _ = req;
     if let Err(e) = st.controller.reoptimize_schedule().await {
         return (StatusCode::BAD_GATEWAY, Json(err(e))).into_response();
@@ -77,18 +135,31 @@ pub async fn trigger_optimization(State(st): State<AppState>, AuthBearer(_): Aut
     (StatusCode::OK, Json(s)).into_response()
 }
 
-pub async fn list_devices(State(_st): State<AppState>, AuthBearer(_): AuthBearer) -> impl IntoResponse {
+pub async fn list_devices(
+    State(_st): State<AppState>,
+    AuthBearer(_): AuthBearer,
+) -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({ "devices": [] }))).into_response()
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SimulationStepRequest { pub steps: u32 }
+pub struct SimulationStepRequest {
+    pub steps: u32,
+}
 
-pub async fn simulation_step(State(st): State<AppState>, AuthBearer(_): AuthBearer, Json(_req): Json<SimulationStepRequest>) -> impl IntoResponse {
+pub async fn simulation_step(
+    State(st): State<AppState>,
+    AuthBearer(_): AuthBearer,
+    Json(_req): Json<SimulationStepRequest>,
+) -> impl IntoResponse {
     if let Err(e) = st.controller.reoptimize_schedule().await {
         return (StatusCode::BAD_REQUEST, Json(err(e))).into_response();
     }
-    get_status(State(st), AuthBearer(uuid::Uuid::nil())).await.into_response()
+    get_status(State(st), AuthBearer(uuid::Uuid::nil()))
+        .await
+        .into_response()
 }
 
-fn err(e: anyhow::Error) -> serde_json::Value { serde_json::json!({ "error": e.to_string() }) }
+fn err(e: anyhow::Error) -> serde_json::Value {
+    serde_json::json!({ "error": e.to_string() })
+}

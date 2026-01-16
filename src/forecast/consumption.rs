@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, Local, Timelike, TimeZone};
+use chrono::{DateTime, FixedOffset, Local, TimeZone, Timelike};
 use uuid::Uuid;
 
 use crate::domain::ConsumptionPoint;
@@ -17,7 +17,9 @@ impl ConsumptionForecaster for SimpleConsumptionForecaster {
     async fn predict_next_24h(&self, _household_id: Uuid) -> Result<Vec<ConsumptionPoint>> {
         let now: DateTime<FixedOffset> = Local::now().fixed_offset();
         let tz = *now.offset();
-        let start = tz.with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0).unwrap();
+        let start = tz
+            .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
+            .unwrap();
 
         let mut out = Vec::with_capacity(24);
         for h in 0..24 {
@@ -29,7 +31,11 @@ impl ConsumptionForecaster for SimpleConsumptionForecaster {
             let morning = bump(hh, 7.5, 1.5) * 1.0;
             let evening = bump(hh, 18.5, 2.0) * 1.6;
 
-            out.push(ConsumptionPoint { time_start: t0, time_end: t1, load_kw: (base + morning + evening).max(0.2) });
+            out.push(ConsumptionPoint {
+                time_start: t0,
+                time_end: t1,
+                load_kw: (base + morning + evening).max(0.2),
+            });
         }
         Ok(out)
     }

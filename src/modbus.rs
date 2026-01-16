@@ -1,4 +1,4 @@
-#[cfg(feature="modbus")]
+#[cfg(feature = "modbus")]
 pub mod client {
     use anyhow::Result;
     use std::sync::Arc;
@@ -15,7 +15,10 @@ pub mod client {
         pub async fn connect(addr: &str, unit_id: u8) -> Result<Self> {
             let socket_addr = addr.parse()?;
             let ctx = tcp::connect(socket_addr).await?;
-            Ok(Self { context: Arc::new(Mutex::new(ctx)), unit_id })
+            Ok(Self {
+                context: Arc::new(Mutex::new(ctx)),
+                unit_id,
+            })
         }
 
         pub async fn read_holding_registers(&self, start: u16, count: u16) -> Result<Vec<u16>> {
@@ -32,5 +35,5 @@ pub mod client {
         }
     }
 }
-#[cfg(not(feature="modbus"))]
+#[cfg(not(feature = "modbus"))]
 pub mod client {}

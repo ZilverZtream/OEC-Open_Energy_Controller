@@ -4,11 +4,21 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
-pub enum PriceArea { SE1, SE2, SE3, SE4 }
+pub enum PriceArea {
+    SE1,
+    SE2,
+    SE3,
+    SE4,
+}
 
 impl std::fmt::Display for PriceArea {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self { Self::SE1 => "SE1", Self::SE2 => "SE2", Self::SE3 => "SE3", Self::SE4 => "SE4" };
+        let s = match self {
+            Self::SE1 => "SE1",
+            Self::SE2 => "SE2",
+            Self::SE3 => "SE3",
+            Self::SE4 => "SE4",
+        };
         write!(f, "{s}")
     }
 }
