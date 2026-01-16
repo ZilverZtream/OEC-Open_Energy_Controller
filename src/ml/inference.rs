@@ -244,21 +244,30 @@ pub mod persistence {
     ) -> Result<()> {
         info!("Saving model to {}", path.display());
 
-        // Ensure parent directory exists
+        ensure_model_directory().await?;
+
+        let model_dir = Path::new(DEFAULT_MODEL_DIR).canonicalize()
+            .unwrap_or_else(|_| Path::new(DEFAULT_MODEL_DIR).to_path_buf());
+
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).await?;
+            let canonical_parent = parent.canonicalize()
+                .or_else(|_| {
+                    std::fs::create_dir_all(parent)?;
+                    parent.canonicalize()
+                })?;
+
+            if !canonical_parent.starts_with(&model_dir) {
+                anyhow::bail!("Security: Model path must be within {}", DEFAULT_MODEL_DIR);
+            }
         }
 
-        // Prepare model for serialization (serialize internal state)
         model.prepare_for_serialization()?;
 
-        // Serialize model to JSON
         let json = serde_json::to_string_pretty(&model)
             .map_err(|e| anyhow::anyhow!("Failed to serialize model to JSON: {}", e))?;
 
         let json_len = json.len();
 
-        // Write to disk
         fs::write(path, json).await?;
 
         info!(
@@ -274,19 +283,31 @@ pub mod persistence {
     pub async fn load_model_from_disk(path: &Path) -> Result<SmartcoreRandomForest> {
         info!("Loading model from {}", path.display());
 
-        // Check if file exists
-        if !path.exists() {
-            anyhow::bail!("Model file does not exist: {}", path.display());
+        let canonical_path = path.canonicalize()
+            .map_err(|e| anyhow::anyhow!("Invalid model path: {}", e))?;
+
+        let model_dir = Path::new(DEFAULT_MODEL_DIR).canonicalize()
+            .unwrap_or_else(|_| Path::new(DEFAULT_MODEL_DIR).to_path_buf());
+
+        if !canonical_path.starts_with(&model_dir) {
+            anyhow::bail!("Security: Model path must be within {}", DEFAULT_MODEL_DIR);
         }
 
-        // Read file
-        let json = fs::read_to_string(path).await?;
+        if !canonical_path.exists() {
+            anyhow::bail!("Model file does not exist: {}", canonical_path.display());
+        }
 
-        // Deserialize model
+        let metadata = fs::metadata(&canonical_path).await?;
+        const MAX_MODEL_SIZE: u64 = 100 * 1024 * 1024;
+        if metadata.len() > MAX_MODEL_SIZE {
+            anyhow::bail!("Model file too large: {} bytes (max {} bytes)", metadata.len(), MAX_MODEL_SIZE);
+        }
+
+        let json = fs::read_to_string(&canonical_path).await?;
+
         let mut model: SmartcoreRandomForest = serde_json::from_str(&json)
             .map_err(|e| anyhow::anyhow!("Failed to deserialize model: {}", e))?;
 
-        // Restore internal state from serialized bytes
         model.restore_from_serialization()?;
 
         info!(

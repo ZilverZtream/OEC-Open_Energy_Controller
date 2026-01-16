@@ -15,15 +15,40 @@ pub mod schedule;
 pub mod forecast;
 pub mod optimize;
 
-use axum::Router;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use axum::{Router, body::Body, extract::Request};
+use tower_http::{cors::CorsLayer, trace::TraceLayer, timeout::TimeoutLayer};
+use std::time::Duration;
+use tower::ServiceBuilder;
 
 use crate::{config::Config, controller::AppState};
 
 pub fn router(state: AppState, cfg: &Config) -> Router {
-    Router::new()
-        .nest("/api/v1", v1::router(state, cfg))
-        .layer(CorsLayer::permissive())
+    let mut router = Router::new()
+        .nest("/api/v1", v1::router(state, cfg));
+
+    if cfg.server.enable_cors {
+        use tower_http::cors::{AllowOrigin, Any};
+        let cors = CorsLayer::new()
+            .allow_origin(AllowOrigin::exact("http://localhost:3000".parse().unwrap()))
+            .allow_methods([
+                axum::http::Method::GET,
+                axum::http::Method::POST,
+                axum::http::Method::PUT,
+                axum::http::Method::DELETE,
+            ])
+            .allow_headers([
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::CONTENT_TYPE,
+            ]);
+        router = router.layer(cors);
+    }
+
+    router
+        .layer(
+            ServiceBuilder::new()
+                .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
+                .layer(TimeoutLayer::new(Duration::from_secs(cfg.server.request_timeout_secs)))
+        )
         .layer(TraceLayer::new_for_http())
 }
 
@@ -36,11 +61,13 @@ pub fn with_swagger(app: Router) -> Router {
 }
 
 #[cfg(feature = "metrics")]
-pub fn with_metrics(app: Router) -> Router {
+pub fn with_metrics(app: Router, cfg: &Config) -> Router {
     use axum_prometheus::PrometheusMetricLayer;
     let (layer, handle) = PrometheusMetricLayer::pair();
-    app.layer(layer).route(
-        "/metrics",
-        axum::routing::get(move || async move { handle.render() }),
-    )
+
+    let metrics_router = Router::new()
+        .route("/metrics", axum::routing::get(move || async move { handle.render() }))
+        .layer(crate::auth::auth_layer(cfg.auth.token.clone()));
+
+    app.layer(layer).merge(metrics_router)
 }

@@ -92,23 +92,24 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = self.status_code();
         let error_type = self.error_type();
-        let message = self.to_string();
 
-        // Log the error with appropriate level
-        match &self {
+        let message = match &self {
             ApiError::InternalError(_)
             | ApiError::DatabaseError(_)
             | ApiError::HardwareError(_)
             | ApiError::OptimizationError(_) => {
                 tracing::error!(error = %self, "API error occurred");
+                "An internal error occurred".to_string()
             }
             ApiError::ServiceUnavailable(_) => {
                 tracing::warn!(error = %self, "Service unavailable");
+                "Service temporarily unavailable".to_string()
             }
             _ => {
                 tracing::debug!(error = %self, "Client error");
+                self.to_string()
             }
-        }
+        };
 
         let error_response = ErrorResponse {
             error: error_type.to_string(),
