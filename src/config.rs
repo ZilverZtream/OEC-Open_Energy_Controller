@@ -119,6 +119,7 @@ pub struct ControllerConfig {
 
 /// Battery configuration
 #[derive(Debug, Clone, Deserialize, Serialize, Validate)]
+#[validate(schema(function = "validate_battery_config"))]
 pub struct BatteryConfig {
     #[validate(range(min = 0.1, max = 1000.0))]
     pub capacity_kwh: f64,
@@ -145,6 +146,25 @@ pub struct BatteryConfig {
     #[serde(default = "default_max_soc")]
     #[validate(range(min = 0.0, max = 100.0))]
     pub max_soc_percent: f64,
+}
+
+/// Custom validation for BatteryConfig
+fn validate_battery_config(config: &BatteryConfig) -> Result<(), validator::ValidationError> {
+    // Validate min_soc < max_soc
+    if config.min_soc_percent >= config.max_soc_percent {
+        return Err(validator::ValidationError::new("min_soc must be less than max_soc"));
+    }
+
+    // Validate initial_soc is within min/max range
+    if config.initial_soc_percent < config.min_soc_percent
+        || config.initial_soc_percent > config.max_soc_percent
+    {
+        return Err(validator::ValidationError::new(
+            "initial_soc_percent must be between min_soc_percent and max_soc_percent",
+        ));
+    }
+
+    Ok(())
 }
 
 /// Hardware abstraction configuration

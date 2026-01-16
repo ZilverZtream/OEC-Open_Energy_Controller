@@ -2,6 +2,18 @@
 
 use super::{AllConstraints, PowerFlowInputs, PowerSnapshot};
 
+// EV Charging Urgency Thresholds
+const EV_HIGH_URGENCY_THRESHOLD: f64 = 0.8;   // Above this: use max power even if importing
+const EV_MEDIUM_URGENCY_THRESHOLD: f64 = 0.3; // Above this: use PV + some grid
+// Below MEDIUM_URGENCY_THRESHOLD: only use excess PV
+
+// Battery SoC Management Thresholds
+const BATTERY_LOW_SOC_MULTIPLIER: f64 = 0.7;  // When to charge from cheap grid (70% of max_soc)
+const BATTERY_MIN_POWER_THRESHOLD_KW: f64 = 0.1; // Minimum power difference to act on
+
+// Grid Price Arbitrage Thresholds
+const CHEAP_GRID_PRICE_MULTIPLIER: f64 = 0.5; // Charge when price < threshold * 0.5
+
 /// Power Flow Model - THE CORE ALGORITHM
 ///
 /// This model computes optimal power flows while respecting the constraint hierarchy:
@@ -92,15 +104,17 @@ impl PowerFlowModel {
         let urgency = ev_state.urgency_factor(inputs.timestamp);
 
         // Determine EV charge power based on urgency and available power
-        let desired_ev_kw = if urgency > 0.8 {
+        let desired_ev_kw = if urgency > EV_HIGH_URGENCY_THRESHOLD {
             // High urgency: use max power even if it means importing from grid
             ev_state.max_charge_kw.min(self.constraints.physical.max_grid_import_kw)
-        } else if urgency > 0.3 {
+        } else if urgency > EV_MEDIUM_URGENCY_THRESHOLD {
             // Medium urgency: use available PV + some grid if needed
             let min_kw = available_pv_kw;
             let max_kw = ev_state.max_charge_kw;
             // Interpolate based on urgency
-            min_kw + (max_kw - min_kw) * ((urgency - 0.3) / 0.5)
+            let urgency_range = urgency - EV_MEDIUM_URGENCY_THRESHOLD;
+            let urgency_span = EV_HIGH_URGENCY_THRESHOLD - EV_MEDIUM_URGENCY_THRESHOLD;
+            min_kw + (max_kw - min_kw) * (urgency_range / urgency_span)
         } else {
             // Low urgency: only use excess PV (solar priority)
             available_pv_kw
@@ -136,7 +150,7 @@ impl PowerFlowModel {
         let max_soc = self.constraints.safety.battery_max_soc_percent;
 
         // Case 1: Excess PV available - charge battery
-        if available_pv_kw > 0.1 && soc < max_soc {
+        if available_pv_kw > BATTERY_MIN_POWER_THRESHOLD_KW && soc < max_soc {
             let charge_kw = available_pv_kw
                 .min(self.constraints.physical.max_battery_charge_kw);
             return (charge_kw, available_pv_kw - charge_kw);
@@ -156,9 +170,10 @@ impl PowerFlowModel {
         }
 
         // Case 3: Cheap grid price and low SoC - charge from grid
-        if inputs.grid_price_sek_kwh < self.constraints.economic.arbitrage_threshold_sek_kwh * 0.5
-            && soc < max_soc * 0.7
-        {
+        let cheap_grid_threshold = self.constraints.economic.arbitrage_threshold_sek_kwh * CHEAP_GRID_PRICE_MULTIPLIER;
+        let low_soc_threshold = max_soc * BATTERY_LOW_SOC_MULTIPLIER;
+
+        if inputs.grid_price_sek_kwh < cheap_grid_threshold && soc < low_soc_threshold {
             let charge_kw = self.constraints.physical.max_battery_charge_kw * 0.5;
             return (charge_kw, available_pv_kw);
         }
