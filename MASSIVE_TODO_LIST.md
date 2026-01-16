@@ -515,8 +515,8 @@
 - [x] Implement `Temperature` newtype (Celsius)
 - [x] Implement `Percentage` newtype (0-100%)
 - [x] Implement `Price` newtype (SEK/kWh)
-- [ ] Implement `Duration` type helpers
-- [ ] Implement `Timestamp` type helpers
+- [x] Implement `Duration` type helpers
+- [x] Implement `Timestamp` type helpers
 - [x] Add unit tests for all domain types
 - [x] Add `Display` and `Debug` implementations
 - [x] Add `serde` serialization for all types
@@ -528,14 +528,14 @@
 - [x] Define `read_state() -> Result<BatteryState>` method
 - [x] Define `set_power(watts: Power) -> Result<()>` method
 - [x] Define `capabilities() -> BatteryCapabilities` method
-- [ ] Define `health_check() -> Result<HealthStatus>` method
+- [x] Define `health_check() -> Result<HealthStatus>` method
 - [x] Create `BatteryState` struct (SoC, power, voltage, temperature, health)
 - [x] Create `BatteryCapabilities` struct (capacity, max charge/discharge, efficiency)
-- [ ] Create `BatteryCommand` enum (Charge, Discharge, Idle, Standby)
-- [ ] Create `BatteryError` enum with thiserror derives
-- [ ] Create `BatteryStatus` enum (Charging, Discharging, Idle, Fault, Offline)
-- [ ] Create `BatteryChemistry` enum (LiFePO4, NMC, LTO, etc.)
-- [ ] Create `DegradationModel` struct (cycle count, health %, degradation rate)
+- [x] Create `BatteryCommand` enum (Charge, Discharge, Idle, Standby)
+- [x] Create `BatteryError` enum with thiserror derives
+- [x] Create `BatteryStatus` enum (Charging, Discharging, Idle, Fault, Offline)
+- [x] Create `BatteryChemistry` enum (LiFePO4, NMC, LTO, etc.)
+- [x] Create `DegradationModel` struct (cycle count, health %, degradation rate)
 - [x] Implement `Default` for `BatteryState`
 - [x] Implement validation for battery commands (power limits, SoC bounds)
 - [x] Add unit tests for domain logic
@@ -550,7 +550,7 @@
 - [x] Create `InverterState` struct (AC power, DC power, efficiency, temperature)
 - [x] Create `InverterMode` enum (Grid-tied, Off-grid, Backup, etc.)
 - [x] Create `InverterCapabilities` struct (max AC power, max DC power, etc.)
-- [ ] Create `InverterError` enum
+- [x] Create `InverterError` enum
 - [x] Add unit tests for inverter domain
 
 ### EV Charger Domain
@@ -565,8 +565,8 @@
 - [x] Create `ChargerStatus` enum (Available, Preparing, Charging, Finishing, Faulted)
 - [x] Create `ChargerCapabilities` struct (max current, phases, connector type)
 - [x] Create `ConnectorType` enum (Type2, CCS, CHAdeMO)
-- [ ] Create `V2XCapabilities` struct (bidirectional, max discharge power)
-- [ ] Create `ChargerError` enum
+- [x] Create `V2XCapabilities` struct (bidirectional, max discharge power)
+- [x] Create `ChargerError` enum
 - [x] Add unit tests for EV charger domain
 
 ### Grid Connection Domain
@@ -590,14 +590,14 @@
 ### Forecast Domain
 - [x] Create `src/domain/forecast.rs`
 - [x] Create `PricePoint` struct (timestamp, price, confidence)
-- [ ] Create `PriceForecast` struct (Vec<PricePoint>)
+- [x] Create `PriceForecast` struct (Vec<PricePoint>)
 - [x] Create `ConsumptionPoint` struct (timestamp, power, confidence)
-- [ ] Create `ConsumptionForecast` struct
+- [x] Create `ConsumptionForecast` struct
 - [x] Create `ProductionPoint` struct (timestamp, power, confidence)
-- [ ] Create `ProductionForecast` struct
+- [x] Create `ProductionForecast` struct
 - [x] Create `Forecast24h` struct (combines price, consumption, production)
 - [x] Create `ForecastConfidence` enum (High, Medium, Low)
-- [ ] Add interpolation method for forecasts
+- [x] Add interpolation method for forecasts
 - [x] Add unit tests for forecast structures
 
 ---

@@ -2,7 +2,29 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
+
+/// Inverter-specific errors
+#[derive(Debug, Error)]
+pub enum InverterError {
+    #[error("Communication error: {0}")]
+    Communication(String),
+    #[error("Invalid mode transition: {0} -> {1}")]
+    InvalidModeTransition(String, String),
+    #[error("Export limit not supported")]
+    ExportLimitNotSupported,
+    #[error("Invalid export limit: {0}W (exceeds maximum)")]
+    InvalidExportLimit(f64),
+    #[error("Inverter offline or unavailable")]
+    Offline,
+    #[error("Inverter in fault state: {0}")]
+    Fault(String),
+    #[error("Temperature out of range: {0}°C")]
+    TemperatureOutOfRange(f64),
+    #[error("Grid frequency out of range: {0} Hz")]
+    FrequencyOutOfRange(f64),
+}
 
 /// Solar/Hybrid Inverter trait - abstraction for Modbus or simulated inverters
 #[async_trait]

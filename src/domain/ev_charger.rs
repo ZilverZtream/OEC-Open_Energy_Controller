@@ -2,7 +2,29 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
+
+/// EV Charger-specific errors
+#[derive(Debug, Error)]
+pub enum ChargerError {
+    #[error("Communication error: {0}")]
+    Communication(String),
+    #[error("Invalid current: {0}A (out of supported range)")]
+    InvalidCurrent(f64),
+    #[error("Vehicle not connected")]
+    VehicleNotConnected,
+    #[error("Charger in fault state: {0}")]
+    Fault(String),
+    #[error("Charger offline or unavailable")]
+    Offline,
+    #[error("Operation not supported: {0}")]
+    NotSupported(String),
+    #[error("Charging session error: {0}")]
+    SessionError(String),
+    #[error("V2G not supported on this charger")]
+    V2GNotSupported,
+}
 
 /// EV Charger trait - abstraction for OCPP-based or simulated EV chargers
 #[async_trait]
@@ -62,6 +84,42 @@ pub enum ConnectorType {
     CCS,
     CHAdeMO,
     Tesla,
+}
+
+/// Vehicle-to-Grid (V2G) and Vehicle-to-Home (V2H) capabilities
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct V2XCapabilities {
+    /// Supports bidirectional power flow (V2G/V2H)
+    pub bidirectional: bool,
+
+    /// Maximum discharge power from vehicle to grid/home (W)
+    pub max_discharge_power_w: f64,
+
+    /// Minimum discharge power (W)
+    pub min_discharge_power_w: f64,
+
+    /// Supports ISO 15118 protocol for smart charging
+    pub supports_iso15118: bool,
+
+    /// Supports vehicle state of charge reporting
+    pub supports_soc_reporting: bool,
+
+    /// Minimum vehicle SoC before allowing discharge (%)
+    pub min_vehicle_soc_for_discharge: f64,
+}
+
+impl Default for V2XCapabilities {
+    fn default() -> Self {
+        Self {
+            bidirectional: false,
+            max_discharge_power_w: 0.0,
+            min_discharge_power_w: 0.0,
+            supports_iso15118: false,
+            supports_soc_reporting: false,
+            min_vehicle_soc_for_discharge: 50.0,
+        }
+    }
 }
 
 /// Simulated EV Charger for development and testing
