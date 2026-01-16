@@ -7,9 +7,9 @@ use super::{FeatureVector, ModelMetadata, ModelType, ValidationMetrics};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "ml")]
-use chrono::{DateTime, Duration, Utc};
-#[cfg(feature = "ml")]
+#[cfg(all(feature = "ml", feature = "db"))]
+use chrono::{Duration, Utc};
+#[cfg(all(feature = "ml", feature = "db"))]
 use uuid::Uuid;
 
 /// Training Dataset
@@ -335,12 +335,13 @@ pub mod consumption_trainer {
             data
         };
 
-        // Extract features
+        // Extract features with pre-allocated vectors for better performance
         info!("Extracting features from {} samples", data.len());
         let feature_extractor = FeatureExtractor::new(latitude, longitude);
 
-        let mut features_list = Vec::new();
-        let mut targets = Vec::new();
+        let data_len = data.len();
+        let mut features_list = Vec::with_capacity(data_len);
+        let mut targets = Vec::with_capacity(data_len);
 
         for point in data {
             let timestamp = point.time_start;
@@ -415,19 +416,28 @@ pub mod consumption_trainer {
             model.metadata.validation_metrics.r2
         );
 
-        // Validate on held-out set
+        // Validate on held-out set using batch prediction (more efficient)
         if !val_x.is_empty() {
             use crate::ml::models::MLModel;
+            use smartcore::linalg::basic::matrix::DenseMatrix;
 
-            let mut val_predictions = Vec::new();
-            for features in &val_x {
-                let fv = FeatureVector::new(
-                    features.clone(),
-                    model.metadata.feature_names.clone(),
-                )?;
-                let pred = model.predict(&fv)?;
-                val_predictions.push(pred.value);
+            // Convert validation features to DenseMatrix for batch prediction
+            let n_val = val_x.len();
+            let n_features = val_x[0].len();
+            let mut flat_val_data = Vec::with_capacity(n_val * n_features);
+            for row in &val_x {
+                flat_val_data.extend_from_slice(row);
             }
+
+            let val_matrix = DenseMatrix::new(n_val, n_features, flat_val_data, false);
+
+            // Batch predict on validation set
+            let val_predictions = model
+                .model
+                .as_ref()
+                .unwrap()
+                .predict(&val_matrix)
+                .map_err(|e| anyhow::anyhow!("Validation prediction failed: {:?}", e))?;
 
             let trainer = ModelTrainer::new(TrainingConfig::default());
             let val_metrics = trainer.calculate_metrics(&val_predictions, &val_y)?;

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 use anyhow::Result;
+#[cfg(all(feature = "ml", feature = "db"))]
+use anyhow::Context;
 use chrono::{DateTime, Utc, Timelike};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -66,6 +68,7 @@ impl Default for TaskStatus {
 pub struct TaskScheduler {
     config: PeriodicTaskConfig,
     controller: Arc<BatteryController>,
+    app_state: Arc<AppState>,
     reoptimize_status: Arc<RwLock<TaskStatus>>,
     forecast_status: Arc<RwLock<TaskStatus>>,
     cleanup_status: Arc<RwLock<TaskStatus>>,
@@ -75,15 +78,21 @@ pub struct TaskScheduler {
 
 impl TaskScheduler {
     /// Create a new task scheduler
-    pub fn new(controller: Arc<BatteryController>) -> Self {
-        Self::with_config(controller, PeriodicTaskConfig::default())
+    pub fn new(app_state: Arc<AppState>) -> Self {
+        let controller = app_state.controller.clone();
+        Self::with_config(app_state, controller, PeriodicTaskConfig::default())
     }
 
     /// Create a new task scheduler with custom configuration
-    pub fn with_config(controller: Arc<BatteryController>, config: PeriodicTaskConfig) -> Self {
+    pub fn with_config(
+        app_state: Arc<AppState>,
+        controller: Arc<BatteryController>,
+        config: PeriodicTaskConfig,
+    ) -> Self {
         Self {
             config,
             controller,
+            app_state,
             reoptimize_status: Arc::new(RwLock::new(TaskStatus::default())),
             forecast_status: Arc::new(RwLock::new(TaskStatus::default())),
             cleanup_status: Arc::new(RwLock::new(TaskStatus::default())),
@@ -290,7 +299,15 @@ impl TaskScheduler {
         loop {
             // Calculate time until next training run
             let now = Utc::now();
-            let target_hour = self.config.ml_training_hour;
+            // Use training_hour from ML config if available, otherwise use scheduler config
+            let target_hour = self
+                .app_state
+                .cfg
+                .forecast
+                .ml_training
+                .as_ref()
+                .map(|ml| ml.training_hour)
+                .unwrap_or(self.config.ml_training_hour);
 
             // Calculate next training time
             let next_run = if now.hour() < target_hour {
@@ -332,18 +349,7 @@ impl TaskScheduler {
 
             #[cfg(all(feature = "ml", feature = "db"))]
             {
-                use crate::ml::inference::persistence::{get_consumption_model_path, save_model_to_disk};
-                use crate::ml::training::consumption_trainer::{train_consumption_model, ConsumptionTrainingConfig};
-
-                // Get household ID and location from config (hardcoded for now)
-                // In production, these would come from the configuration
-                let household_id = uuid::Uuid::nil(); // Placeholder
-                let latitude = 59.3293; // Stockholm (placeholder)
-                let longitude = 18.0686;
-
-                // Get consumption repository
-                // Note: This is a simplified version. In production, you'd need to get the repo from AppState
-                match self.train_model_internal(household_id, latitude, longitude).await {
+                match self.train_model_internal().await {
                     Ok(()) => {
                         let mut status = self.ml_training_status.write().await;
                         status.last_success = Some(now);
@@ -373,27 +379,60 @@ impl TaskScheduler {
     ///
     /// Separated for easier testing and error handling
     #[cfg(all(feature = "ml", feature = "db"))]
-    async fn train_model_internal(
-        &self,
-        household_id: uuid::Uuid,
-        _latitude: f64,
-        _longitude: f64,
-    ) -> Result<()> {
-        use crate::ml::inference::persistence::{ensure_model_directory, get_consumption_model_path, save_model_to_disk};
-        use crate::ml::training::consumption_trainer::{train_consumption_model, ConsumptionTrainingConfig};
+    async fn train_model_internal(&self) -> Result<()> {
+        use crate::ml::inference::persistence::{
+            ensure_model_directory, get_consumption_model_path, save_model_to_disk,
+        };
+        use crate::ml::training::consumption_trainer::{
+            train_consumption_model, ConsumptionTrainingConfig,
+        };
 
-        // Note: In production, you'd get the consumption repository from AppState
-        // For now, this is a placeholder that will need to be properly integrated
-        info!("Training consumption model for household {}", household_id);
+        // Get configuration values from AppState
+        let household_id = uuid::Uuid::parse_str(&self.app_state.cfg.household.id)
+            .context("Invalid household ID in configuration")?;
+        let latitude = self.app_state.cfg.household.latitude;
+        let longitude = self.app_state.cfg.household.longitude;
 
-        // This is a placeholder implementation
-        // In production, you would need to:
-        // 1. Get the consumption repository from AppState
-        // 2. Call train_consumption_model with proper parameters
-        // 3. Save the model to disk
-        // 4. Reload the model in the forecaster
+        info!(
+            "Training consumption model for household {} at ({}, {})",
+            household_id, latitude, longitude
+        );
 
-        warn!("ML training pipeline requires proper integration with AppState - placeholder only");
+        // Ensure model directory exists
+        ensure_model_directory().await?;
+
+        // Get consumption repository
+        let consumption_repo = self.app_state.repos.db.consumption();
+
+        // Create training config from user settings or use defaults
+        let training_config = if let Some(ml_config) = &self.app_state.cfg.forecast.ml_training {
+            ConsumptionTrainingConfig {
+                history_days: ml_config.history_days,
+                max_samples: ml_config.max_samples,
+                validation_split: ml_config.validation_split,
+                n_trees: ml_config.n_trees,
+                max_depth: ml_config.max_depth,
+                min_samples_split: ml_config.min_samples_split,
+            }
+        } else {
+            ConsumptionTrainingConfig::default()
+        };
+
+        // Train the model
+        let trained_model = train_consumption_model(
+            &consumption_repo,
+            household_id,
+            latitude,
+            longitude,
+            training_config,
+        )
+        .await?;
+
+        // Save model to disk
+        let model_path = get_consumption_model_path();
+        save_model_to_disk(trained_model, &model_path).await?;
+
+        info!("Model saved successfully to {}", model_path.display());
 
         Ok(())
     }
@@ -408,9 +447,9 @@ mod tests {
     #[tokio::test]
     async fn test_task_scheduler_creation() {
         let config = Config::load().unwrap();
-        let app_state = AppState::new(config).await.unwrap();
+        let app_state = Arc::new(AppState::new(config).await.unwrap());
 
-        let scheduler = TaskScheduler::new(app_state.controller.clone());
+        let scheduler = TaskScheduler::new(app_state);
 
         let reopt_status = scheduler.get_reoptimize_status().await;
         assert_eq!(reopt_status.run_count, 0);
@@ -424,9 +463,13 @@ mod tests {
             forecast_refresh_interval_secs: 30,
             cleanup_interval_secs: 300,
             health_check_interval_secs: 10,
+            ml_training_hour: 3,
+            enable_ml_training: true,
         };
 
         assert_eq!(config.reoptimize_interval_secs, 60);
         assert_eq!(config.forecast_refresh_interval_secs, 30);
+        assert_eq!(config.ml_training_hour, 3);
+        assert!(config.enable_ml_training);
     }
 }
