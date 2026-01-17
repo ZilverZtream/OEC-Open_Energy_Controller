@@ -20,6 +20,8 @@ pub struct ElprisetJustNuPriceForecaster {
     client: reqwest::Client,
     cache: Arc<RwLock<Option<(DateTime<Utc>, PriceArea, Vec<PricePoint>)>>>,
     ttl: Duration,
+    #[cfg(feature = "db")]
+    db_repo: Option<Arc<crate::repo::prices::PriceRepository>>,
 }
 
 impl ElprisetJustNuPriceForecaster {
@@ -38,6 +40,33 @@ impl ElprisetJustNuPriceForecaster {
             client,
             cache: Arc::new(RwLock::new(None)),
             ttl,
+            #[cfg(feature = "db")]
+            db_repo: None,
+        })
+    }
+
+    /// Create a new forecaster with database fallback
+    #[cfg(feature = "db")]
+    pub fn new_with_db_fallback(
+        base_url: String,
+        ttl: Duration,
+        db_repo: Arc<crate::repo::prices::PriceRepository>,
+    ) -> Result<Self> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            USER_AGENT,
+            HeaderValue::from_static("open-energy-controller/0.2"),
+        );
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .default_headers(headers)
+            .build()?;
+        Ok(Self {
+            base_url,
+            client,
+            cache: Arc::new(RwLock::new(None)),
+            ttl,
+            db_repo: Some(db_repo),
         })
     }
 
@@ -58,6 +87,9 @@ impl ElprisetJustNuPriceForecaster {
 #[async_trait]
 impl PriceForecaster for ElprisetJustNuPriceForecaster {
     async fn predict_next_24h(&self, area: PriceArea) -> Result<Vec<PricePoint>> {
+        use tracing::{error, warn};
+
+        // Check in-memory cache first
         {
             let c = self.cache.read().await;
             if let Some((ts, a, v)) = &*c {
@@ -69,33 +101,81 @@ impl PriceForecaster for ElprisetJustNuPriceForecaster {
             }
         }
 
+        // CRITICAL FIX: Try API first, fallback to database on failure
         let url = self.url_for_today(area);
-        let resp = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .context("price GET failed")?;
-        let status = resp.status();
-        let body = resp.text().await.context("price read failed")?;
-        if !status.is_success() {
-            anyhow::bail!("price API error: HTTP {status}: {body}");
+        let api_result = async {
+            let resp = self
+                .client
+                .get(&url)
+                .send()
+                .await
+                .context("price GET failed")?;
+            let status = resp.status();
+            let body = resp.text().await.context("price read failed")?;
+            if !status.is_success() {
+                anyhow::bail!("price API error: HTTP {status}: {body}");
+            }
+
+            let raw: Vec<RawPrice> = serde_json::from_str(&body).context("price JSON parse failed")?;
+            let points = raw
+                .into_iter()
+                .map(|r| PricePoint {
+                    time_start: r.time_start,
+                    time_end: r.time_end,
+                    price_sek_per_kwh: r.sek_per_kwh,
+                    export_price_sek_per_kwh: None, // Use default (40% of import price)
+                })
+                .collect::<Vec<_>>();
+            Ok::<Vec<PricePoint>, anyhow::Error>(points)
+        }.await;
+
+        match api_result {
+            Ok(points) => {
+                // API success - update cache
+                let mut c = self.cache.write().await;
+                *c = Some((Utc::now(), area, points.clone()));
+
+                // Persist to database for future fallback
+                #[cfg(feature = "db")]
+                if let Some(ref db_repo) = self.db_repo {
+                    if let Err(e) = db_repo.insert_prices(points.clone(), area).await {
+                        warn!(error=%e, "Failed to persist prices to database");
+                    }
+                }
+
+                Ok(points)
+            }
+            Err(api_error) => {
+                // API failed - try database fallback
+                warn!(error=%api_error, "Price API failed, attempting database fallback");
+
+                #[cfg(feature = "db")]
+                if let Some(ref db_repo) = self.db_repo {
+                    let now = Utc::now();
+                    let start = now.with_timezone(&chrono::FixedOffset::east_opt(0).unwrap());
+                    let end = (now + chrono::Duration::hours(24)).with_timezone(&chrono::FixedOffset::east_opt(0).unwrap());
+
+                    match db_repo.find_range(start, end, area).await {
+                        Ok(db_points) if !db_points.is_empty() => {
+                            warn!("Using {} price points from database fallback", db_points.len());
+                            // Update cache with DB data
+                            let mut c = self.cache.write().await;
+                            *c = Some((Utc::now(), area, db_points.clone()));
+                            return Ok(db_points);
+                        }
+                        Ok(_) => {
+                            warn!("Database fallback returned no prices");
+                        }
+                        Err(e) => {
+                            error!(error=%e, "Database fallback also failed");
+                        }
+                    }
+                }
+
+                // Both API and DB failed
+                Err(api_error).context("Price API failed and database fallback unavailable or empty")
+            }
         }
-
-        let raw: Vec<RawPrice> = serde_json::from_str(&body).context("price JSON parse failed")?;
-        let points = raw
-            .into_iter()
-            .map(|r| PricePoint {
-                time_start: r.time_start,
-                time_end: r.time_end,
-                price_sek_per_kwh: r.sek_per_kwh,
-                export_price_sek_per_kwh: None, // Use default (40% of import price)
-            })
-            .collect::<Vec<_>>();
-
-        let mut c = self.cache.write().await;
-        *c = Some((Utc::now(), area, points.clone()));
-        Ok(points)
     }
 }
 
