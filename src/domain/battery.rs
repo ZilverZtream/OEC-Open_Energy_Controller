@@ -175,14 +175,15 @@ pub struct SimulatedBattery {
     /// CRITICAL SAFETY FIX: Lock-free emergency shutdown flag
     /// Atomic flag to prevent deadlock if main loop hangs while holding state lock
     emergency_stop: Arc<AtomicBool>,
+    /// Last update timestamp for dynamic timestep calculation
+    last_update_time: Arc<RwLock<std::time::Instant>>,
 }
 
 impl SimulatedBattery {
     pub fn new(initial: BatteryState, caps: BatteryCapabilities) -> Self {
-        Self::new_with_ambient(initial, caps, 25.0) // Default 25°C for backwards compatibility
+        Self::new_with_ambient(initial, caps, 25.0)
     }
 
-    /// Create a new simulated battery with configurable ambient temperature
     pub fn new_with_ambient(initial: BatteryState, caps: BatteryCapabilities, ambient_temp_c: f64) -> Self {
         Self {
             state: Arc::new(RwLock::new(initial)),
@@ -191,15 +192,14 @@ impl SimulatedBattery {
             simulate_noise: false,
             ambient_temp_c,
             emergency_stop: Arc::new(AtomicBool::new(false)),
+            last_update_time: Arc::new(RwLock::new(std::time::Instant::now())),
         }
     }
 
-    /// Create a new simulated battery with realistic delays and noise enabled
     pub fn new_realistic(initial: BatteryState, caps: BatteryCapabilities) -> Self {
-        Self::new_realistic_with_ambient(initial, caps, 25.0) // Default 25°C for backwards compatibility
+        Self::new_realistic_with_ambient(initial, caps, 25.0)
     }
 
-    /// Create a new simulated battery with realistic delays, noise, and configurable ambient temperature
     pub fn new_realistic_with_ambient(initial: BatteryState, caps: BatteryCapabilities, ambient_temp_c: f64) -> Self {
         Self {
             state: Arc::new(RwLock::new(initial)),
@@ -208,6 +208,7 @@ impl SimulatedBattery {
             simulate_noise: true,
             ambient_temp_c,
             emergency_stop: Arc::new(AtomicBool::new(false)),
+            last_update_time: Arc::new(RwLock::new(std::time::Instant::now())),
         }
     }
 
@@ -278,64 +279,51 @@ impl Battery for SimulatedBattery {
     }
 
     async fn set_power(&self, watts: f64) -> Result<()> {
-        // CRITICAL SAFETY CHECK: Abort if emergency stop is active
         if self.emergency_stop.load(Ordering::SeqCst) {
             anyhow::bail!("Battery emergency stop is active - cannot set power");
+        }
+
+        let now = std::time::Instant::now();
+        let mut last_update = self.last_update_time.write().await;
+        let dt_seconds = now.duration_since(*last_update).as_secs_f64();
+        *last_update = now;
+        drop(last_update);
+
+        if dt_seconds <= 0.0 {
+            return Ok(());
         }
 
         let mut st = self.state.write().await;
         st.power_w = watts;
 
-        // CRITICAL POWER CONVENTION:
-        // `watts` parameter is AC-side power (grid perspective)
-        // - Positive = charging (drawing from grid)
-        // - Negative = discharging (feeding to grid)
-        // The battery stores DC power, so we apply efficiency conversion:
-        // - Charging: AC * efficiency = DC stored
-        // - Discharging: DC / efficiency = AC delivered
-        // This matches the optimizer's convention in dp.rs to prevent efficiency double-dip
-
-        // 60s step skeleton
-        let dt_h = 60.0 / 3600.0;
+        let dt_h = dt_seconds / 3600.0;
         let cap_kwh = self.caps.capacity_kwh.max(0.1);
 
         let power_kw = watts / 1000.0;
-        // Validate efficiency is within acceptable range
         let eff = if self.caps.efficiency >= 0.5 && self.caps.efficiency <= 1.0 {
             self.caps.efficiency
         } else {
             anyhow::bail!("Invalid battery efficiency: {}. Must be between 0.5 and 1.0", self.caps.efficiency);
         };
-        // Apply efficiency conversion: AC -> DC
+
         let delta_kwh = if power_kw >= 0.0 {
-            // Charging: AC power * efficiency = DC energy stored
             power_kw * dt_h * eff
         } else {
-            // Discharging: DC energy / efficiency = AC power delivered
             power_kw * dt_h / eff
         };
         let delta_pct = (delta_kwh / cap_kwh) * 100.0;
         st.soc_percent = Self::clamp_soc(st.soc_percent + delta_pct);
 
-        // Temperature simulation - rises during charging/discharging
-        // CRITICAL FIX: Use configurable ambient temperature based on installation environment
-        // Nordic garage in winter might be -10°C, indoor might be 20°C
-        const TEMP_RISE_PER_KW: f64 = 2.0; // °C per kW of power
-        const COOLING_RATE: f64 = 0.5; // °C per time step when idle
-        const MAX_SAFE_TEMP: f64 = 45.0; // Should match SafetyConstraints default
+        const TEMP_RISE_PER_KW: f64 = 2.0;
+        const THERMAL_TIME_CONSTANT: f64 = 600.0;
+        const MAX_SAFE_TEMP: f64 = 45.0;
 
         let power_abs_kw = watts.abs() / 1000.0;
         let target_temp = self.ambient_temp_c + (power_abs_kw * TEMP_RISE_PER_KW);
 
-        // Gradually approach target temperature
-        if st.temperature_c < target_temp {
-            st.temperature_c = (st.temperature_c + COOLING_RATE).min(target_temp);
-        } else {
-            st.temperature_c = (st.temperature_c - COOLING_RATE).max(target_temp);
-        }
-
-        // CRITICAL: Clamp to safe operating range (respect safety constraints)
-        st.temperature_c = st.temperature_c.clamp(0.0, MAX_SAFE_TEMP);
+        let temp_delta = target_temp - st.temperature_c;
+        let temp_change = temp_delta * (1.0 - (-dt_seconds / THERMAL_TIME_CONSTANT).exp());
+        st.temperature_c = (st.temperature_c + temp_change).clamp(0.0, MAX_SAFE_TEMP);
 
         // Degradation simulation - health decreases with cycles
         // A cycle is a full charge or discharge (100% SoC change)

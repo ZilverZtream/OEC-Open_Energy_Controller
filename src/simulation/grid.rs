@@ -68,44 +68,44 @@ pub struct GridSimulatorConfig {
     /// Random seed for reproducibility (None = random)
     pub random_seed: Option<u64>,
 
-    // SIMULATION IMPROVEMENT #2: Grid Impedance Model
-    /// Grid connection point (GCP) impedance in Ohms
-    /// Typical values: 0.1-0.5 Ω for strong grid, 0.5-2.0 Ω for weak grid
     pub gcp_impedance_ohm: f64,
-    /// Enable voltage sag/rise simulation based on power flow
+    pub gcp_reactance_ohm: f64,
     pub enable_voltage_impedance: bool,
+    pub load_power_factor: f64,
 }
 
 impl Default for GridSimulatorConfig {
     fn default() -> Self {
         Self {
-            nominal_frequency_hz: 50.0, // European grid
-            nominal_voltage_v: 230.0,   // European grid
-            frequency_std_dev_hz: 0.02, // ±0.02 Hz is typical
-            voltage_std_dev_v: 2.0,     // ±2 V is typical
-            fuse_rating_a: 25.0,        // 25A main fuse (typical household)
+            nominal_frequency_hz: 50.0,
+            nominal_voltage_v: 230.0,
+            frequency_std_dev_hz: 0.02,
+            voltage_std_dev_v: 2.0,
+            fuse_rating_a: 25.0,
             enable_faults: true,
-            fault_probability_per_hour: 0.01, // 1% chance per hour (~90 hours MTBF)
+            fault_probability_per_hour: 0.01,
             random_seed: None,
-            gcp_impedance_ohm: 0.3,     // Medium grid strength
+            gcp_impedance_ohm: 0.3,
+            gcp_reactance_ohm: 0.4,
             enable_voltage_impedance: true,
+            load_power_factor: 0.95,
         }
     }
 }
 
 impl GridSimulatorConfig {
-    /// Configuration for strong grid (urban area, close to substation)
     pub fn strong_grid() -> Self {
         Self {
             gcp_impedance_ohm: 0.1,
+            gcp_reactance_ohm: 0.15,
             ..Default::default()
         }
     }
 
-    /// Configuration for weak grid (rural area, far from substation)
     pub fn weak_grid() -> Self {
         Self {
             gcp_impedance_ohm: 1.5,
+            gcp_reactance_ohm: 2.0,
             ..Default::default()
         }
     }
@@ -244,37 +244,28 @@ impl GridSimulator {
         }
     }
 
-    /// Calculate voltage at connection point including impedance effects
-    ///
-    /// V_measured = V_source - I * Z_line (for import)
-    /// V_measured = V_source + I * Z_line (for export)
-    ///
-    /// Where:
-    /// - V_source = grid source voltage
-    /// - I = current flow
-    /// - Z_line = grid connection point impedance
-    ///
-    /// This models voltage sag during import and voltage rise during export
     fn calculate_voltage_with_impedance(
         &self,
         source_voltage_v: f64,
         import_kw: f64,
         export_kw: f64,
     ) -> f64 {
-        // Net power flow (positive = import, negative = export)
         let net_power_kw = import_kw - export_kw;
-
-        // Calculate current: I = P / V
         let current_a = (net_power_kw * 1000.0) / source_voltage_v;
 
-        // Voltage drop: V_drop = I * Z
-        let voltage_drop_v = current_a * self.config.gcp_impedance_ohm;
+        let pf = self.config.load_power_factor.clamp(0.7, 1.0);
+        let cos_phi = pf;
+        let sin_phi = (1.0 - pf * pf).sqrt();
 
-        // Voltage sag during import (positive current)
-        // Voltage rise during export (negative current)
-        let measured_voltage = source_voltage_v - voltage_drop_v;
+        let active_current = current_a * cos_phi;
+        let reactive_current = current_a * sin_phi;
 
-        // Clamp to realistic range
+        let voltage_drop_resistive = active_current * self.config.gcp_impedance_ohm;
+        let voltage_drop_reactive = reactive_current * self.config.gcp_reactance_ohm;
+
+        let total_voltage_drop = voltage_drop_resistive + voltage_drop_reactive;
+        let measured_voltage = source_voltage_v - total_voltage_drop;
+
         measured_voltage.clamp(180.0, 260.0)
     }
 

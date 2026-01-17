@@ -16,6 +16,7 @@ mod power_flow;
 mod repo;
 mod simulation;
 mod telemetry;
+mod utils;
 
 use anyhow::Result;
 use axum::Router;
