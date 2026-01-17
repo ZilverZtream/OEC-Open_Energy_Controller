@@ -7,12 +7,12 @@ pub mod scheduler;
 pub mod v2x_controller;
 pub mod maintenance;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::config::Config;
@@ -91,10 +91,16 @@ impl AppState {
             )
             .await;
 
-        let price = Box::new(ElprisetJustNuPriceForecaster::new(
-            cfg.prices.base_url.clone(),
-            std::time::Duration::from_secs(cfg.prices.cache_ttl_seconds),
-        )?);
+        // AUDIT FIX #7: Handle price forecaster initialization gracefully
+        // ElprisetJustNuPriceForecaster::new() creates an HTTP client, which can fail
+        // (though rarely) due to TLS setup issues or invalid config. Provide clear error context.
+        let price = Box::new(
+            ElprisetJustNuPriceForecaster::new(
+                cfg.prices.base_url.clone(),
+                std::time::Duration::from_secs(cfg.prices.cache_ttl_seconds),
+            )
+            .context("Failed to initialize price forecaster HTTP client. Check TLS/SSL setup.")?,
+        );
 
         // Use ML-enhanced forecaster if enabled, otherwise use simple baseline
         #[cfg(feature = "ml")]
@@ -190,6 +196,26 @@ impl AppState {
             None
         };
 
+        // CRITICAL FIX: Initialize Safety Monitor BEFORE controller
+        // This provides defense-in-depth against hardware failures
+        let safety_config = safety_monitor::SafetyMonitorConfig {
+            check_interval_s: 1, // Fast 1-second monitoring
+            fuse_rating_a: 25.0, // Default 25A fuse
+            fuse_trip_margin: 0.1, // Trip at 90% of rating
+            grid_voltage_min_v: 207.0,
+            grid_voltage_max_v: 253.0,
+            grid_frequency_min_hz: 49.5,
+            grid_frequency_max_hz: 50.5,
+            battery_temp_min_c: -10.0,
+            battery_temp_max_c: 55.0,
+            battery_soc_min_percent: cfg.battery.min_soc_percent,
+            battery_soc_max_percent: cfg.battery.max_soc_percent,
+            control_loop_timeout_s: 30, // 30s timeout for control loop
+            enable_emergency_stop: true,
+        };
+        let (safety_monitor, _safety_rx) = safety_monitor::SafetyMonitor::new(safety_config);
+        let safety_monitor_arc = Arc::new(safety_monitor);
+
         let history_capacity = ((24 * 60 * 60) / cfg.controller.tick_seconds.max(1)) as usize;
         let controller = Arc::new(BatteryController {
             battery,
@@ -208,32 +234,14 @@ impl AppState {
             last_sensor_read: Arc::new(RwLock::new(Utc::now())),
             v2x: v2x_controller,
             ev_charger: ev_charger_clone,
+            safety_monitor: Some(Arc::clone(&safety_monitor_arc)),
         });
-
-        // CRITICAL FIX: Initialize Safety Monitor
-        // This provides defense-in-depth against hardware failures
-        let safety_config = safety_monitor::SafetyMonitorConfig {
-            check_interval_s: 1, // Fast 1-second monitoring
-            fuse_rating_a: 25.0, // Default 25A fuse
-            fuse_trip_margin: 0.1, // Trip at 90% of rating
-            grid_voltage_min_v: 207.0,
-            grid_voltage_max_v: 253.0,
-            grid_frequency_min_hz: 49.5,
-            grid_frequency_max_hz: 50.5,
-            battery_temp_min_c: -10.0,
-            battery_temp_max_c: 55.0,
-            battery_soc_min_percent: cfg.battery.min_soc_percent,
-            battery_soc_max_percent: cfg.battery.max_soc_percent,
-            control_loop_timeout_s: 30, // 30s timeout for control loop
-            enable_emergency_stop: true,
-        };
-        let (safety_monitor, _safety_rx) = safety_monitor::SafetyMonitor::new(safety_config);
 
         Ok(Self {
             cfg,
             controller,
             repos,
-            safety_monitor: Arc::new(safety_monitor),
+            safety_monitor: safety_monitor_arc,
         })
     }
 }
@@ -273,6 +281,44 @@ pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
     // This provides independent high-priority safety monitoring
     let safety_monitor = Arc::clone(&state_arc.safety_monitor);
     let controller_for_safety = Arc::clone(&state_arc.controller);
+
+    // AUDIT FIX #2: Subscribe to safety monitor emergency stop commands
+    // The safety monitor broadcasts emergency stop commands when violations are detected
+    let mut safety_rx = safety_monitor.subscribe();
+    let controller_for_emergency = Arc::clone(&state_arc.controller);
+    tokio::spawn(async move {
+        use tracing::error;
+        loop {
+            match safety_rx.recv().await {
+                Ok(safety_monitor::SafetyCommand::EmergencyStop(violation)) => {
+                    error!(
+                        violation_type = %violation.violation_type,
+                        message = %violation.message,
+                        "EMERGENCY STOP triggered by safety violation"
+                    );
+
+                    // Immediately halt all power flows
+                    if let Err(e) = controller_for_emergency.battery.set_power(0.0).await {
+                        error!(error=%e, "Failed to stop battery during emergency");
+                    }
+
+                    if let Err(e) = controller_for_emergency.ev_charger.set_current(0.0).await {
+                        error!(error=%e, "Failed to stop EV charger during emergency");
+                    }
+
+                    info!("Emergency stop completed - all power flows halted");
+                }
+                Ok(safety_monitor::SafetyCommand::Resume) => {
+                    info!("Safety monitor resumed normal operation");
+                }
+                Err(e) => {
+                    error!(error=%e, "Safety monitor channel error");
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        }
+    });
+
     tokio::spawn(async move {
         safety_monitor.start_monitoring().await;
         info!("Safety monitor started");
@@ -281,14 +327,24 @@ pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
         loop {
             interval.tick().await;
 
-            // Update heartbeat based on controller's last sensor read
-            // This detects if the control loop is stuck
-            safety_monitor.heartbeat().await;
+            // AUDIT FIX #1: Do NOT update heartbeat here!
+            // The safety loop must NOT update its own heartbeat - that would defeat
+            // the watchdog timeout detection. The heartbeat is updated by the main
+            // controller loop after each successful iteration.
 
             // Get current battery state for safety checks
             if let Ok(battery_state) = controller_for_safety.get_current_state().await {
-                // Get real grid status from controller
-                let grid_status = controller_for_safety.get_grid_status().await.unwrap_or_default();
+                // Get real grid status from controller (use safe defaults if unavailable)
+                let grid_status = controller_for_safety.get_grid_status().await.unwrap_or(
+                    GridConnection {
+                        status: GridStatus::Normal,
+                        import_power_w: 0.0,
+                        export_power_w: 0.0,
+                        frequency_hz: 50.0,
+                        voltage_v: 230.0,
+                        current_a: 0.0,
+                    }
+                );
 
                 let measurements = safety_monitor::SafetyMeasurements {
                     grid_import_kw: grid_status.import_power_w / 1000.0, // Convert W to kW
@@ -333,6 +389,8 @@ pub struct BatteryController {
     v2x: Option<Arc<v2x_controller::V2XController>>,
     // EV charger for direct actuation
     ev_charger: Arc<dyn crate::domain::EvCharger>,
+    // Safety monitor for watchdog heartbeat updates
+    safety_monitor: Option<Arc<safety_monitor::SafetyMonitor>>,
 }
 
 impl BatteryController {
@@ -354,10 +412,26 @@ impl BatteryController {
                 Ok(s) => {
                     // Update last successful sensor read timestamp
                     *self.last_sensor_read.write().await = now_utc;
+
+                    // AUDIT FIX #1: Update safety monitor heartbeat after successful iteration
+                    // This allows the safety monitor to detect if the main control loop hangs
+                    if let Some(ref safety_monitor) = self.safety_monitor {
+                        safety_monitor.heartbeat().await;
+                    }
+
                     s
                 },
                 Err(e) => {
                     error!(error=%e, "Control loop sensor failure - will retry");
+
+                    // AUDIT FIX #5: Attempt to reconnect on sensor failure
+                    // If the Modbus TCP connection dropped, reconnect before retrying
+                    info!("Attempting to reconnect battery...");
+                    if let Err(reconnect_err) = self.battery.reconnect().await {
+                        warn!(error=%reconnect_err, "Battery reconnection failed");
+                    } else {
+                        info!("Battery reconnection successful");
+                    }
 
                     // Check if data is stale (no successful read for >30s)
                     let last_read = *self.last_sensor_read.read().await;
@@ -391,16 +465,16 @@ impl BatteryController {
             });
 
             // Get scheduled target power from optimizer
-            let mut schedule_target_w = self
+            let schedule_target_w = self
                 .schedule
                 .read()
                 .await
                 .as_ref()
                 .and_then(|s| s.power_at(now_utc));
 
-            // CRITICAL FIX: Integrate V2X Controller Logic
-            // V2X controller can override battery schedule if EV needs to discharge
-            // This provides vehicle-to-grid/home functionality
+            // AUDIT FIX #6: Evaluate V2X discharge decision separately from home battery schedule
+            // V2X targets the EV, NOT the home battery. Store separately.
+            let mut ev_target_w: Option<f64> = None;
             if let Some(ref v2x) = self.v2x {
                 // Get current price for V2X decision
                 let current_price = self
@@ -435,10 +509,10 @@ impl BatteryController {
                                 power_w = -decision.target_power_w,
                                 reason = %decision.reason,
                                 vehicle_soc = decision.vehicle_soc,
-                                "V2X overriding battery schedule for EV discharge"
+                                "V2X requesting EV discharge (V2G/V2H)"
                             );
-                            // Override schedule with V2X discharge (negative power)
-                            schedule_target_w = Some(-decision.target_power_w);
+                            // Store EV target separately (negative = discharge from EV)
+                            ev_target_w = Some(-decision.target_power_w);
                         }
                     }
                     Err(e) => {
@@ -481,6 +555,11 @@ impl BatteryController {
             // Pass schedule target to PowerFlowModel if available
             if let Some(target_w) = schedule_target_w {
                 inputs = inputs.with_target_power_w(target_w);
+            }
+
+            // AUDIT FIX #6: Pass EV target to PowerFlowModel separately from home battery
+            if let Some(ev_w) = ev_target_w {
+                inputs = inputs.with_ev_target_power_w(ev_w);
             }
 
             // Validate inputs before passing to PowerFlowModel
@@ -976,6 +1055,9 @@ mod tests {
             panic!("Test requires database setup - use #[ignore] or mock repos");
         };
 
+        // Create a simulated EV charger for tests
+        let ev_charger = Arc::new(crate::domain::SimulatedEvCharger::new()) as Arc<dyn crate::domain::EvCharger>;
+
         BatteryController {
             battery,
             optimizer: Arc::new(BatteryOptimizer {
@@ -992,6 +1074,8 @@ mod tests {
             repos,
             last_sensor_read: Arc::new(RwLock::new(Utc::now())),
             v2x: None, // No V2X in tests by default
+            ev_charger,
+            safety_monitor: None, // No safety monitor in tests by default
         }
     }
 
