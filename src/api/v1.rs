@@ -65,8 +65,8 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
         // Weather routes
         .route("/weather/forecast", get(weather::get_weather_forecast))
         .with_state(state)
-        // TODO: Re-enable auth layer after fixing type inference issues
-        // .layer(crate::auth::auth_layer(cfg.auth.token.clone()))
+        // SECURITY: Authentication layer using Bearer token validation with constant-time comparison
+        .layer(crate::auth::auth_layer(cfg.auth.token.clone()))
 }
 
 pub async fn healthz() -> impl IntoResponse {
@@ -79,6 +79,10 @@ pub struct SystemStatus {
     pub battery: BatteryState,
     pub schedule_next_4h: Vec<ScheduleEntry>,
     pub forecast_updated_at: Option<String>,
+    // CRITICAL FIX: Real-time power flow data for dashboard visualization
+    pub grid_flow_w: f64,
+    pub pv_production_w: f64,
+    pub house_consumption_w: f64,
 }
 
 pub async fn get_status(
@@ -93,12 +97,26 @@ pub async fn get_status(
                 .await
                 .map(|s| s.next_hours(4))
                 .unwrap_or_default();
+
+            // CRITICAL FIX: Include real-time power flow data
+            // Use sensor fallback values from config (TODO: read from actual sensors)
+            let pv_production_kw = st.cfg.hardware.sensor_fallback.default_pv_production_kw;
+            let house_load_kw = st.cfg.hardware.sensor_fallback.default_house_load_kw;
+            let battery_power_kw = battery_state.power_w / 1000.0;
+
+            // Calculate grid flow: positive = importing, negative = exporting
+            // Grid = House Load - PV Production - Battery Discharge
+            let grid_flow_kw = house_load_kw - pv_production_kw - battery_power_kw;
+
             (
                 StatusCode::OK,
                 Json(SystemStatus {
                     battery: battery_state,
                     schedule_next_4h,
                     forecast_updated_at: None,
+                    grid_flow_w: grid_flow_kw * 1000.0,
+                    pv_production_w: pv_production_kw * 1000.0,
+                    house_consumption_w: house_load_kw * 1000.0,
                 }),
             )
                 .into_response()

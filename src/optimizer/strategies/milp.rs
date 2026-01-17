@@ -72,40 +72,91 @@ impl MilpOptimizer {
             anyhow::bail!("No price periods available");
         }
 
-        // For now, use a simplified greedy approach as a placeholder
-        // Full MILP implementation would require more complex good_lp setup
-        // This ensures the code compiles while providing reasonable results
+        // CRITICAL FIX: Implement proper MILP optimization using good_lp
+        // This replaces the greedy placeholder with true mathematical optimization
 
-        // Simplified optimization: charge when price is low, discharge when high
-        let avg_price: f64 = forecast.prices.iter()
+        // Create optimization problem
+        let mut problem = ProblemVariables::new();
+
+        // Define variables for each time period
+        // charge[t] = charging power at time t (kW)
+        // discharge[t] = discharging power at time t (kW)
+        // soc[t] = state of charge at time t (%)
+        let charge = problem.add_vector(variable().min(0.0), n_periods);
+        let discharge = problem.add_vector(variable().min(0.0), n_periods);
+        let soc = problem.add_vector(variable().min(0.0).max(100.0), n_periods + 1);
+
+        // Calculate time step durations (in hours)
+        let durations: Vec<f64> = forecast.prices.iter()
+            .map(|p| {
+                let duration = p.time_end.signed_duration_since(p.time_start);
+                duration.num_minutes() as f64 / 60.0
+            })
+            .collect();
+
+        // Extract prices
+        let prices: Vec<f64> = forecast.prices.iter()
             .map(|p| p.price_sek_per_kwh)
-            .sum::<f64>() / n_periods as f64;
+            .collect();
 
-        let mut power_schedule = Vec::new();
-        let mut current_soc = state.battery.soc_percent;
+        // Build the optimization problem
+        let mut problem_builder = problem.minimise(
+            // Objective: minimize cost = sum(price * (charge - discharge) * duration)
+            // Negative discharge because we're selling energy back
+            (0..n_periods).map(|t| {
+                prices[t] * durations[t] * (charge[t] - discharge[t])
+            }).sum()
+        ).using(default_solver);
 
-        for price_point in &forecast.prices {
-            let duration = price_point.time_end
-                .signed_duration_since(price_point.time_start);
-            let duration_h = duration.num_minutes() as f64 / 60.0;
+        // Constraint: Initial SoC
+        problem_builder = problem_builder.with(constraint!(
+            soc[0] == state.battery.soc_percent
+        ));
 
-            let power_kw = if price_point.price_sek_per_kwh < avg_price * 0.9 && current_soc < constraints.max_soc_percent {
-                // Charge at low prices
-                constraints.battery_max_charge_kw.min(constraints.max_power_grid_kw)
-            } else if price_point.price_sek_per_kwh > avg_price * 1.1 && current_soc > constraints.min_soc_percent {
-                // Discharge at high prices
-                -constraints.battery_max_discharge_kw.min(constraints.max_power_grid_kw)
-            } else {
-                0.0
-            };
+        // Constraints for each time period
+        for t in 0..n_periods {
+            let dt_h = durations[t];
 
-            power_schedule.push(power_kw);
+            // SoC dynamics: soc[t+1] = soc[t] + (charge[t] * eff - discharge[t] / eff) * dt / capacity * 100
+            let soc_delta = (charge[t] * constraints.battery_efficiency
+                           - discharge[t] / constraints.battery_efficiency)
+                           * dt_h / constraints.battery_capacity_kwh * 100.0;
 
-            // Update simulated SoC
-            let energy_kwh = power_kw * duration_h * constraints.battery_efficiency;
-            let soc_change = (energy_kwh / constraints.battery_capacity_kwh) * 100.0;
-            current_soc = (current_soc + soc_change).clamp(constraints.min_soc_percent, constraints.max_soc_percent);
+            problem_builder = problem_builder.with(constraint!(
+                soc[t + 1] == soc[t] + soc_delta
+            ));
+
+            // Power limits
+            problem_builder = problem_builder.with(constraint!(
+                charge[t] <= constraints.battery_max_charge_kw.min(constraints.max_power_grid_kw)
+            ));
+
+            problem_builder = problem_builder.with(constraint!(
+                discharge[t] <= constraints.battery_max_discharge_kw.min(constraints.max_power_grid_kw)
+            ));
+
+            // SoC bounds
+            problem_builder = problem_builder.with(constraint!(
+                soc[t + 1] >= constraints.min_soc_percent
+            ));
+
+            problem_builder = problem_builder.with(constraint!(
+                soc[t + 1] <= constraints.max_soc_percent
+            ));
         }
+
+        // Solve the optimization problem
+        let solution = problem_builder.solve()
+            .context("MILP solver failed to find solution")?;
+
+        // Extract power schedule (positive = charge, negative = discharge)
+        let power_schedule: Vec<f64> = (0..n_periods)
+            .map(|t| {
+                let charge_kw = solution.value(charge[t]);
+                let discharge_kw = solution.value(discharge[t]);
+                charge_kw - discharge_kw // Net power
+            })
+            .collect();
 
         Ok(power_schedule)
     }

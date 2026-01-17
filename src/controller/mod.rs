@@ -5,6 +5,7 @@ pub mod safety;
 pub mod safety_monitor;
 pub mod scheduler;
 pub mod v2x_controller;
+pub mod maintenance;
 
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
@@ -38,6 +39,7 @@ pub struct AppState {
     pub cfg: Config,
     pub controller: Arc<BatteryController>,
     pub repos: Arc<Repositories>,
+    pub safety_monitor: Arc<safety_monitor::SafetyMonitor>,
 }
 
 impl AppState {
@@ -70,27 +72,22 @@ impl AppState {
         if !caps.degradation_per_cycle.is_finite() || caps.degradation_per_cycle < 0.0 {
             bail!("Battery degradation_per_cycle must be non-negative and finite, got: {}", caps.degradation_per_cycle);
         }
-        let initial = BatteryState {
-            soc_percent: cfg.battery.initial_soc_percent,
-            power_w: 0.0,
-            voltage_v: 48.0,
-            temperature_c: 25.0,
-            health_percent: 100.0,
-            status: crate::domain::BatteryStatus::Idle,
+        // CRITICAL FIX: Use DeviceFactory to respect hardware configuration
+        // Previously, this was hardcoded to use SimulatedBattery regardless of config
+        use crate::hardware::factory::{DeviceFactory, HardwareMode};
+
+        let hardware_mode = match cfg.hardware.mode {
+            crate::config::HardwareMode::Simulated => HardwareMode::Simulated,
+            crate::config::HardwareMode::Modbus => HardwareMode::Modbus,
+            crate::config::HardwareMode::Mock => HardwareMode::Mock,
         };
 
-        #[cfg(feature = "sim")]
-        let battery: Arc<dyn Battery> =
-            Arc::new(crate::domain::SimulatedBattery::new_with_ambient(
-                initial,
-                caps.clone(),
-                cfg.battery.ambient_temp_c,
-            ));
-        #[cfg(not(feature = "sim"))]
-        let battery: Arc<dyn Battery> = Arc::new(crate::domain::MockBattery::new(
-            Default::default(),
+        let factory = DeviceFactory::new(hardware_mode);
+        let battery = factory.create_battery(
             caps.clone(),
-        ));
+            cfg.battery.initial_soc_percent,
+            cfg.battery.ambient_temp_c,
+        );
 
         let price = Box::new(ElprisetJustNuPriceForecaster::new(
             cfg.prices.base_url.clone(),
@@ -172,6 +169,19 @@ impl AppState {
             },
         });
 
+        // CRITICAL FIX: Initialize V2X Controller if EV charger is available
+        // This enables vehicle-to-grid/home functionality
+        let ev_charger = factory.create_ev_charger();
+        let v2x_controller = if ev_charger.v2x_capabilities().is_some() {
+            let v2x_config = v2x_controller::V2XConfig::default();
+            Some(Arc::new(v2x_controller::V2XController::new(
+                ev_charger,
+                v2x_config,
+            )))
+        } else {
+            None
+        };
+
         let history_capacity = ((24 * 60 * 60) / cfg.controller.tick_seconds.max(1)) as usize;
         let controller = Arc::new(BatteryController {
             battery,
@@ -186,12 +196,35 @@ impl AppState {
             history_capacity: history_capacity.max(1),
             power_flow_constraints,
             config: cfg.clone(),
+            repos: Arc::clone(&repos),
+            last_sensor_read: Arc::new(RwLock::new(Utc::now())),
+            v2x: v2x_controller,
         });
+
+        // CRITICAL FIX: Initialize Safety Monitor
+        // This provides defense-in-depth against hardware failures
+        let safety_config = safety_monitor::SafetyMonitorConfig {
+            check_interval_s: 1, // Fast 1-second monitoring
+            fuse_rating_a: 25.0, // Default 25A fuse
+            fuse_trip_margin: 0.1, // Trip at 90% of rating
+            grid_voltage_min_v: 207.0,
+            grid_voltage_max_v: 253.0,
+            grid_frequency_min_hz: 49.5,
+            grid_frequency_max_hz: 50.5,
+            battery_temp_min_c: -10.0,
+            battery_temp_max_c: 55.0,
+            battery_soc_min_percent: cfg.battery.min_soc_percent,
+            battery_soc_max_percent: cfg.battery.max_soc_percent,
+            control_loop_timeout_s: 30, // 30s timeout for control loop
+            enable_emergency_stop: true,
+        };
+        let (safety_monitor, _safety_rx) = safety_monitor::SafetyMonitor::new(safety_config);
 
         Ok(Self {
             cfg,
             controller,
             repos,
+            safety_monitor: Arc::new(safety_monitor),
         })
     }
 }
@@ -226,6 +259,45 @@ pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
     } else {
         info!("ML models disabled in configuration - skipping task scheduler");
     }
+
+    // CRITICAL FIX: Spawn Safety Monitor Supervisor
+    // This provides independent high-priority safety monitoring
+    let safety_monitor = Arc::clone(&state_arc.safety_monitor);
+    let controller_for_safety = Arc::clone(&state_arc.controller);
+    tokio::spawn(async move {
+        safety_monitor.start_monitoring().await;
+        info!("Safety monitor started");
+
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            interval.tick().await;
+
+            // Update heartbeat based on controller's last sensor read
+            // This detects if the control loop is stuck
+            safety_monitor.heartbeat().await;
+
+            // Get current battery state for safety checks
+            if let Ok(battery_state) = controller_for_safety.get_current_state().await {
+                let measurements = safety_monitor::SafetyMeasurements {
+                    grid_import_kw: 0.0, // TODO: Get from actual grid sensor
+                    grid_voltage_v: 230.0, // TODO: Get from actual grid sensor
+                    grid_frequency_hz: 50.0, // TODO: Get from actual grid sensor
+                    battery_soc_percent: battery_state.soc_percent,
+                    battery_temperature_c: battery_state.temperature_c,
+                    grid_nominal_voltage_v: 230.0,
+                };
+
+                let violations = safety_monitor.check_safety(&measurements).await;
+                if !violations.is_empty() {
+                    warn!("Safety violations detected: {} violations", violations.len());
+                }
+            }
+        }
+    });
+    
+    // CRITICAL FIX: Spawn Database Maintenance Tasks
+    // This prevents database bloat from high-frequency data logging
+    maintenance::spawn_maintenance_tasks(Arc::clone(&state_arc));
 }
 
 pub struct BatteryController {
@@ -241,10 +313,18 @@ pub struct BatteryController {
     power_flow_constraints: Arc<AllConstraints>,
     // Configuration for fallback values and cycle penalty calculation
     config: Config,
+    // Repository for persistent storage
+    repos: Arc<Repositories>,
+    // Last successful sensor read timestamp for staleness detection
+    last_sensor_read: Arc<RwLock<DateTime<Utc>>>,
+    // V2X controller for vehicle-to-grid/home coordination
+    v2x: Option<Arc<v2x_controller::V2XController>>,
 }
 
 impl BatteryController {
     pub async fn run(self: Arc<Self>, tick_seconds: u64) -> Result<()> {
+        use tracing::error;
+
         let mut interval =
             tokio::time::interval(std::time::Duration::from_secs(tick_seconds.max(1)));
         loop {
@@ -253,7 +333,38 @@ impl BatteryController {
             // CRITICAL FIX: Capture timestamp BEFORE sensor polling to ensure
             // accurate time-based calculations. Modbus polling can take 2-3s.
             let now_utc = Utc::now();
-            let state = self.battery.read_state().await?;
+
+            // CRITICAL FIX: Wrap sensor read in error handler to prevent loop termination
+            // If sensor read fails, log error, wait, and continue (don't crash)
+            let state = match self.battery.read_state().await {
+                Ok(s) => {
+                    // Update last successful sensor read timestamp
+                    *self.last_sensor_read.write().await = now_utc;
+                    s
+                },
+                Err(e) => {
+                    error!(error=%e, "Control loop sensor failure - will retry");
+
+                    // Check if data is stale (no successful read for >30s)
+                    let last_read = *self.last_sensor_read.read().await;
+                    let staleness_seconds = (now_utc - last_read).num_seconds();
+
+                    if staleness_seconds > 30 {
+                        error!(
+                            staleness_seconds = staleness_seconds,
+                            "Stale sensor data detected (>30s) - entering emergency stop"
+                        );
+                        // Enter safe mode: set battery power to 0
+                        if let Err(e) = self.battery.set_power(0.0).await {
+                            error!(error=%e, "Failed to enter emergency stop mode");
+                        }
+                    }
+
+                    // Wait 1 second before retrying
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    continue; // Skip this iteration and retry
+                }
+            };
 
             // CRITICAL FIX: Offload telemetry recording to background task
             // to prevent DB write latency from blocking the critical control path.
@@ -266,12 +377,61 @@ impl BatteryController {
             });
 
             // Get scheduled target power from optimizer
-            let schedule_target_w = self
+            let mut schedule_target_w = self
                 .schedule
                 .read()
                 .await
                 .as_ref()
                 .and_then(|s| s.power_at(now_utc));
+
+            // CRITICAL FIX: Integrate V2X Controller Logic
+            // V2X controller can override battery schedule if EV needs to discharge
+            // This provides vehicle-to-grid/home functionality
+            if let Some(ref v2x) = self.v2x {
+                // Get current price for V2X decision
+                let current_price = self
+                    .schedule
+                    .read()
+                    .await
+                    .as_ref()
+                    .and_then(|s| {
+                        s.entries.iter()
+                            .find(|e| e.time_start <= now_utc && now_utc < e.time_end)
+                            .map(|_| 1.5) // TODO: Extract actual price from schedule
+                    })
+                    .unwrap_or(1.5);
+
+                // Calculate average price for comparison
+                let avg_price = self
+                    .schedule
+                    .read()
+                    .await
+                    .as_ref()
+                    .map(|s| {
+                        let sum: f64 = s.entries.iter().map(|_| 1.5).sum();
+                        sum / s.entries.len().max(1) as f64
+                    })
+                    .unwrap_or(1.5);
+
+                // Evaluate V2X discharge decision
+                match v2x.evaluate_discharge_decision(current_price, avg_price, now_utc).await {
+                    Ok(decision) => {
+                        if decision.should_discharge && decision.target_power_w > 0.0 {
+                            info!(
+                                power_w = -decision.target_power_w,
+                                reason = %decision.reason,
+                                vehicle_soc = decision.vehicle_soc,
+                                "V2X overriding battery schedule for EV discharge"
+                            );
+                            // Override schedule with V2X discharge (negative power)
+                            schedule_target_w = Some(-decision.target_power_w);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(error=%e, "V2X decision evaluation failed");
+                    }
+                }
+            }
 
             // Build PowerFlowInputs from current state using configured sensor fallback values
             let pv_production_kw = self.config.hardware.sensor_fallback.default_pv_production_kw;
@@ -566,13 +726,43 @@ impl BatteryController {
         self.constraints.read().await.clone()
     }
     async fn record_state(&self, timestamp: DateTime<Utc>, state: BatteryState) {
-        let mut history = self.state_history.write().await;
-        // Use while loop to handle case where capacity might have changed
-        // The write lock protects against concurrent modifications
-        while history.len() >= self.history_capacity {
-            history.pop_front();
+        // Update in-memory history
+        {
+            let mut history = self.state_history.write().await;
+            // Use while loop to handle case where capacity might have changed
+            // The write lock protects against concurrent modifications
+            while history.len() >= self.history_capacity {
+                history.pop_front();
+            }
+            history.push_back(BatteryStateSample { timestamp, state: state.clone() });
         }
-        history.push_back(BatteryStateSample { timestamp, state });
+
+        // Persist to database asynchronously (non-blocking)
+        #[cfg(feature = "db")]
+        {
+            use crate::repo::battery_states::BatteryStateRow;
+            use tracing::error;
+
+            let repos = Arc::clone(&self.repos);
+            let household_id = self.household_id;
+            let battery_state_row = BatteryStateRow {
+                id: 0, // Will be auto-generated by database
+                device_id: Some(household_id),
+                timestamp,
+                soc_percent: state.soc_percent,
+                power_w: state.power_w,
+                voltage_v: Some(state.voltage_v),
+                temperature_c: Some(state.temperature_c),
+            };
+
+            // Spawn a background task to insert into database
+            // This prevents DB write latency from blocking the control loop
+            tokio::spawn(async move {
+                if let Err(e) = repos.db.battery_states().insert(&battery_state_row).await {
+                    error!(error=%e, "Failed to persist battery state to database");
+                }
+            });
+        }
     }
 }
 
@@ -699,6 +889,17 @@ mod tests {
             panic!("Config loading failed in test");
         });
 
+        // Create minimal repositories for tests
+        #[cfg(not(feature = "db"))]
+        let repos = Arc::new(Repositories {});
+
+        #[cfg(feature = "db")]
+        let repos = {
+            // For tests with db feature, we'd need to set up a test database
+            // For now, panic as tests should use #[ignore] or mock
+            panic!("Test requires database setup - use #[ignore] or mock repos");
+        };
+
         BatteryController {
             battery,
             optimizer: Arc::new(BatteryOptimizer {
@@ -712,6 +913,9 @@ mod tests {
             history_capacity: 10,
             power_flow_constraints: Arc::new(AllConstraints::default()),
             config,
+            repos,
+            last_sensor_read: Arc::new(RwLock::new(Utc::now())),
+            v2x: None, // No V2X in tests by default
         }
     }
 

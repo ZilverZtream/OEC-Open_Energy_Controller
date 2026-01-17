@@ -35,6 +35,7 @@ impl DeviceFactory {
         &self,
         caps: BatteryCapabilities,
         initial_soc: f64,
+        ambient_temp_c: f64,
     ) -> Arc<dyn Battery> {
         match self.mode {
             HardwareMode::Simulated => {
@@ -42,11 +43,11 @@ impl DeviceFactory {
                     soc_percent: initial_soc,
                     power_w: 0.0,
                     voltage_v: 48.0,
-                    temperature_c: 25.0,
+                    temperature_c: ambient_temp_c,
                     health_percent: 100.0,
                     status: BatteryStatus::Idle,
                 };
-                Arc::new(SimulatedBattery::new(initial, caps))
+                Arc::new(SimulatedBattery::new_with_ambient(initial, caps, ambient_temp_c))
             }
             HardwareMode::Modbus => {
                 // TODO: Implement Modbus battery
@@ -55,11 +56,11 @@ impl DeviceFactory {
                     soc_percent: initial_soc,
                     power_w: 0.0,
                     voltage_v: 48.0,
-                    temperature_c: 25.0,
+                    temperature_c: ambient_temp_c,
                     health_percent: 100.0,
                     status: BatteryStatus::Idle,
                 };
-                Arc::new(SimulatedBattery::new(initial, caps))
+                Arc::new(SimulatedBattery::new_with_ambient(initial, caps, ambient_temp_c))
             }
             HardwareMode::Mock => {
                 // TODO: Implement Mock battery with pre-programmed responses
@@ -68,11 +69,11 @@ impl DeviceFactory {
                     soc_percent: initial_soc,
                     power_w: 0.0,
                     voltage_v: 48.0,
-                    temperature_c: 25.0,
+                    temperature_c: ambient_temp_c,
                     health_percent: 100.0,
                     status: BatteryStatus::Idle,
                 };
-                Arc::new(SimulatedBattery::new(initial, caps))
+                Arc::new(SimulatedBattery::new_with_ambient(initial, caps, ambient_temp_c))
             }
         }
     }
@@ -176,7 +177,7 @@ mod tests {
             chemistry: BatteryChemistry::LiFePO4,
         };
 
-        let battery = factory.create_battery(caps, 50.0);
+        let battery = factory.create_battery(caps, 50.0, 25.0);
         let state = battery.read_state().await.unwrap();
 
         assert_eq!(state.soc_percent, 50.0);
