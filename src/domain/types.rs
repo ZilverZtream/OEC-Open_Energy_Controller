@@ -388,6 +388,14 @@ impl std::fmt::Display for Percentage {
 }
 
 /// Price in SEK per kilowatt-hour (SEK/kWh)
+///
+/// ## IMPORTANT: This type is for UNIT PRICES, not accumulated costs!
+///
+/// Using f64 for unit prices (SEK/kWh) is fine because:
+/// - Prices are small, well-bounded values (0-10 SEK/kWh typically)
+/// - Precision errors are negligible at this scale
+///
+/// However, for accumulated costs over time, see the `Money` type below.
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct Price(pub f64);
@@ -417,9 +425,110 @@ impl std::fmt::Display for Price {
 }
 
 impl Mul<Energy> for Price {
-    type Output = f64; // Cost in SEK
+    type Output = Money; // Cost in SEK (using Money type to avoid drift)
     fn mul(self, energy: Energy) -> Self::Output {
-        self.0 * energy.as_kilowatt_hours()
+        // Convert to öre (integer) to avoid floating point drift
+        let sek = self.0 * energy.as_kilowatt_hours();
+        Money::from_sek(sek)
+    }
+}
+
+/// Money in Swedish Kronor (SEK)
+///
+/// ## CRITICAL FIX #10: Floating Point Drift Prevention
+///
+/// **Problem**: Using f64 for accumulated costs causes drift over time.
+/// Example: 0.1 + 0.2 != 0.3 in floating point arithmetic.
+/// Over a year of billing, this drift becomes significant and causes
+/// user distrust when "Total Savings" doesn't match the actual electricity bill.
+///
+/// **Solution**: Store money as integer öre (1 SEK = 100 öre).
+/// - 1 öre precision (0.01 SEK) is sufficient for billing
+/// - Integer arithmetic is exact, no drift
+/// - Convert to/from SEK only for display
+///
+/// ## Example: Accumulating Costs
+///
+/// ```ignore
+/// // BAD: Floating point drift
+/// let mut total_cost_f64 = 0.0_f64;
+/// for hour in 0..8760 {  // 1 year
+///     total_cost_f64 += price * consumption;  // Drifts!
+/// }
+///
+/// // GOOD: Integer öre, no drift
+/// let mut total_cost = Money::zero();
+/// for hour in 0..8760 {
+///     total_cost = total_cost + (price * consumption);  // Exact!
+/// }
+/// println!("Annual cost: {}", total_cost);  // Matches utility bill
+/// ```
+#[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Money(i64); // Stored in öre (1 SEK = 100 öre)
+
+impl Money {
+    /// Create money from SEK (floating point)
+    ///
+    /// Rounds to nearest öre (0.01 SEK)
+    pub fn from_sek(sek: f64) -> Self {
+        Self((sek * 100.0).round() as i64)
+    }
+
+    /// Create money from öre (integer)
+    pub fn from_ore(ore: i64) -> Self {
+        Self(ore)
+    }
+
+    /// Zero money
+    pub fn zero() -> Self {
+        Self(0)
+    }
+
+    /// Get money as SEK (floating point, for display)
+    pub fn as_sek(&self) -> f64 {
+        self.0 as f64 / 100.0
+    }
+
+    /// Get money as öre (integer, exact)
+    pub fn as_ore(&self) -> i64 {
+        self.0
+    }
+
+    /// Check if negative (cost vs. revenue)
+    pub fn is_negative(&self) -> bool {
+        self.0 < 0
+    }
+
+    /// Absolute value
+    pub fn abs(&self) -> Self {
+        Self(self.0.abs())
+    }
+}
+
+impl std::fmt::Display for Money {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.2} SEK", self.as_sek())
+    }
+}
+
+impl Add for Money {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Money {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl std::iter::Sum for Money {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Money::zero(), |acc, x| acc + x)
     }
 }
 

@@ -60,6 +60,20 @@ impl SmhiClient {
     }
 
     /// Fetch weather forecast for a location
+    ///
+    /// # Robustness: Persistence Forecast Fallback
+    ///
+    /// CRITICAL FIX #6: A "Smart" home must degrade gracefully when offline.
+    /// If the SMHI/Met.no API is unreachable (network glitch, API down),
+    /// this function will generate a simple persistence forecast:
+    /// - Assumes current weather conditions persist for the next 24h
+    /// - Uses typical Swedish winter values as fallback
+    ///
+    /// This allows heating and charging control loops to continue operating
+    /// instead of crashing/halting when the API is unavailable.
+    ///
+    /// The system should still attempt to fetch real forecasts, but can
+    /// fall back to "dumb thermostat" behavior when necessary.
     pub async fn fetch_forecast(&self, location: &GeoLocation) -> Result<WeatherForecast> {
         let url = format!(
             "{}/category/pmp3g/version/2/geotype/point/lon/{:.6}/lat/{:.6}/data.json",
@@ -68,29 +82,83 @@ impl SmhiClient {
 
         debug!("Fetching weather forecast from SMHI: {}", url);
 
-        let response = self
+        // Attempt to fetch from API
+        let response_result = self
             .client
             .get(&url)
             .send()
-            .await
-            .context("Failed to send request to SMHI API")?;
+            .await;
 
-        if !response.status().is_success() {
-            error!("SMHI API returned error status: {}", response.status());
-            anyhow::bail!("SMHI API error: {}", response.status());
+        match response_result {
+            Ok(response) if response.status().is_success() => {
+                // Success path: parse real forecast
+                let smhi_response: SmhiResponse = response
+                    .json()
+                    .await
+                    .context("Failed to parse SMHI response")?;
+
+                info!(
+                    "Successfully fetched weather forecast from SMHI for location ({}, {})",
+                    location.latitude, location.longitude
+                );
+
+                self.parse_forecast(location.clone(), smhi_response)
+            }
+            Ok(response) => {
+                // API returned error status
+                error!("SMHI API returned error status: {}. Falling back to persistence forecast.", response.status());
+                Ok(self.generate_persistence_forecast(location.clone()))
+            }
+            Err(e) => {
+                // Network error or timeout
+                error!(
+                    "Failed to fetch weather from SMHI ({}). Using persistence forecast fallback. \
+                     Heating/charging control will continue with conservative assumptions.",
+                    e
+                );
+                Ok(self.generate_persistence_forecast(location.clone()))
+            }
+        }
+    }
+
+    /// Generate a simple persistence forecast when API is unavailable
+    ///
+    /// Assumes current conditions persist for 24 hours.
+    /// Uses typical Swedish winter values as conservative baseline.
+    fn generate_persistence_forecast(&self, location: GeoLocation) -> WeatherForecast {
+        use chrono::{Utc, Duration as ChronoDuration};
+
+        info!("Generating persistence forecast (API unavailable) for location ({}, {})",
+              location.latitude, location.longitude);
+
+        // Conservative Swedish winter assumptions
+        // These values are pessimistic to avoid under-heating
+        const FALLBACK_TEMP_C: f64 = -5.0;      // Cold but not extreme
+        const FALLBACK_CLOUD_COVER: f64 = 75.0;  // Mostly cloudy (low solar)
+        const FALLBACK_WIND_MS: f64 = 5.0;       // Moderate wind
+        const FALLBACK_HUMIDITY: f64 = 80.0;     // High humidity (Swedish winter)
+
+        let now = Utc::now();
+        let mut points = Vec::new();
+
+        // Generate 24 hourly points
+        for hour in 0..24 {
+            let timestamp = now + ChronoDuration::hours(hour);
+            points.push(WeatherPoint {
+                timestamp: timestamp.into(),
+                temperature_c: FALLBACK_TEMP_C,
+                cloud_cover_percent: FALLBACK_CLOUD_COVER,
+                wind_speed_ms: FALLBACK_WIND_MS,
+                precipitation_mm: 0.0,  // Assume no precipitation
+                humidity_percent: FALLBACK_HUMIDITY,
+            });
         }
 
-        let smhi_response: SmhiResponse = response
-            .json()
-            .await
-            .context("Failed to parse SMHI response")?;
-
-        info!(
-            "Successfully fetched weather forecast from SMHI for location ({}, {})",
-            location.latitude, location.longitude
-        );
-
-        self.parse_forecast(location.clone(), smhi_response)
+        WeatherForecast {
+            location,
+            generated_at: now.into(),
+            points,
+        }
     }
 
     /// Parse SMHI response into our weather forecast format

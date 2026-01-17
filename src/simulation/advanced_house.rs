@@ -1,5 +1,64 @@
+//! # Advanced House Simulation with Thermal Physics and HVAC
+//!
+//! This module provides comprehensive house simulation including:
+//! - Thermal zone modeling (building physics, heat transfer)
+//! - HVAC system integration (heat pumps, heating, cooling)
+//! - Three-phase electrical load distribution
+//! - Electrical base load
+//!
+//! ## vs. Simple HouseSimulator
+//!
+//! This is the **advanced** simulator for Swedish houses with heat pumps.
+//! Unlike the simple `HouseSimulator` which only models electrical load,
+//! `AdvancedHouseSimulator` models:
+//! ✓ Indoor temperature dynamics
+//! ✓ Heat pump operation (COP, defrost cycles, DHW priority)
+//! ✓ Building thermal mass and insulation
+//! ✓ Passive solar gain through windows
+//! ✓ Three-phase load balancing
+//!
+//! ## CRITICAL: HVAC System Required
+//!
+//! To use `AdvancedHouseSimulator` properly, you MUST inject an HvacSystem:
+//! - `GeothermalHeatPump` for bergvärme (ground source)
+//! - `AirHeatPump` for luftvärmepump (air source)
+//!
+//! If you skip the HVAC system (pass `None`), the simulation will have:
+//! - NO heating/cooling
+//! - Indoor temperature will drift with outdoor temperature
+//! - This defeats the purpose of using the advanced simulator!
+//!
+//! ## Example Usage
+//!
+//! ```ignore
+//! use crate::simulation::advanced_house::{AdvancedHouseSimulator, AdvancedHouseConfig};
+//! use crate::simulation::hvac::{GeothermalHeatPump, GeothermalHeatPumpConfig};
+//!
+//! // Create HVAC system (REQUIRED for realistic simulation)
+//! let hvac_config = GeothermalHeatPumpConfig::default();
+//! let hvac = Box::new(GeothermalHeatPump::new(hvac_config));
+//!
+//! // Create house simulator with HVAC
+//! let house_config = AdvancedHouseConfig::default();
+//! let mut house = AdvancedHouseSimulator::new(
+//!     house_config,
+//!     start_time,
+//!     20.0,  // Initial indoor temp (°C)
+//!     Some(hvac),  // CRITICAL: Inject HVAC system
+//! );
+//!
+//! // Run simulation
+//! house.tick(new_time, outdoor_temp, passive_solar_gain, base_electrical_load);
+//!
+//! // Get results
+//! println!("Indoor temp: {}°C", house.indoor_temp_c());
+//! println!("Total load: {} kW", house.total_load_kw());
+//! println!("HVAC power: {} kW", house.state().hvac_power_kw);
+//! ```
+
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
+use tracing;
 use super::hvac::{HvacSystem, ThreePhaseLoad};
 use super::thermal::{ThermalZone, ThermalZoneConfig};
 
@@ -83,10 +142,45 @@ impl AdvancedHouseSimulator {
         &self.state.phase_loads
     }
 
-    pub fn tick(&mut self, new_time: NaiveDateTime, outdoor_temp_c: f64, solar_gain_w: f64, base_load_kw: f64) {
+    /// Update the house simulation state
+    ///
+    /// # CRITICAL: Solar Gain vs Solar PV Production
+    /// - `solar_irradiance_gain_w`: PASSIVE solar heat gain through windows (typically 0-2000W)
+    ///   This is thermal energy from sunlight warming the house interior.
+    /// - This is NOT PV production! Do not pass inverter output (kW electricity) here.
+    /// - PV production is electrical power (measured at the inverter) and does NOT directly
+    ///   heat the house. Only a tiny fraction becomes heat via electronics losses.
+    ///
+    /// # Arguments
+    /// * `new_time` - New simulation timestamp
+    /// * `outdoor_temp_c` - Outdoor air temperature in Celsius
+    /// * `solar_irradiance_gain_w` - Passive solar heat gain through windows in Watts (0-2000W typical)
+    /// * `base_load_kw` - Base electrical load of the house in kW
+    ///
+    /// # Example
+    /// ```ignore
+    /// // CORRECT: Passive solar gain from irradiance through windows
+    /// let solar_gain_w = window_area_m2 * solar_irradiance_w_per_m2 * transmittance;
+    /// house.tick(time, outdoor_temp, solar_gain_w, base_load);
+    ///
+    /// // WRONG: Do NOT pass PV production here!
+    /// // house.tick(time, outdoor_temp, pv_inverter_output_w, base_load);  // BUG!
+    /// ```
+    pub fn tick(&mut self, new_time: NaiveDateTime, outdoor_temp_c: f64, solar_irradiance_gain_w: f64, base_load_kw: f64) {
         let dt_seconds = (new_time - self.state.timestamp).num_seconds() as f64;
         if dt_seconds <= 0.0 {
             return;
+        }
+
+        // SAFETY: Validate solar gain is in reasonable range for passive solar (not PV output)
+        // Typical max: ~2kW for large south-facing windows on sunny winter day
+        // If you see >3kW, someone likely passed PV production instead of passive gain!
+        if solar_irradiance_gain_w > 3000.0 {
+            tracing::warn!(
+                "Solar gain {}W exceeds typical passive solar range (0-2000W). \
+                 Verify this is passive solar irradiance through windows, not PV inverter output!",
+                solar_irradiance_gain_w
+            );
         }
 
         let indoor_temp = self.thermal_zone.indoor_temp_c();
@@ -101,7 +195,7 @@ impl AdvancedHouseSimulator {
             (ThreePhaseLoad::new(0.0, 0.0, 0.0), 0.0)
         };
 
-        self.thermal_zone.step(dt_seconds, outdoor_temp_c, hvac_heat_output, solar_gain_w);
+        self.thermal_zone.step(dt_seconds, outdoor_temp_c, hvac_heat_output, solar_irradiance_gain_w);
 
         let hvac_power_kw = hvac_load.total_power_kw(self.config.nominal_voltage_v);
 
