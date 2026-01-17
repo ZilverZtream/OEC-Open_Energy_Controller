@@ -88,14 +88,10 @@ pub struct AuthConfig {
     #[validate(length(min = 32))]
     pub token: String,
 
-    #[serde(default = "default_token_expiry_hours")]
-    pub token_expiry_hours: u64,
-
-    #[serde(default)]
-    pub enable_jwt: bool,
-
-    #[serde(default)]
-    pub jwt_secret: Option<String>,
+    // SECURITY FIX: Removed misleading JWT/expiry config fields
+    // The current implementation only supports static Bearer token authentication
+    // If JWT support is needed, it must be implemented in src/auth.rs first
+    // Removed fields: token_expiry_hours, enable_jwt, jwt_secret
 }
 
 /// Household configuration for ML training and forecasting
@@ -507,7 +503,6 @@ pub struct PricesConfig {
 // Default value functions
 fn default_max_connections() -> usize { 1000 }
 fn default_request_timeout_secs() -> u64 { 30 }
-fn default_token_expiry_hours() -> u64 { 24 }
 fn default_max_retries() -> u32 { 3 }
 fn default_retry_delay_ms() -> u64 { 1000 }
 fn default_min_soc() -> f64 { 10.0 }

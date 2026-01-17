@@ -18,6 +18,8 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info, warn};
 
+use crate::domain::{Battery, Inverter};
+
 /// Safety monitor configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SafetyMonitorConfig {
@@ -239,6 +241,10 @@ pub struct SafetyMonitor {
     config: SafetyMonitorConfig,
     state: Arc<RwLock<SafetyMonitorState>>,
     command_tx: broadcast::Sender<SafetyCommand>,
+    /// Direct hardware references for emergency shutdown
+    /// CRITICAL: These bypass message passing to ensure shutdown even if control loop hangs
+    battery: Option<Arc<dyn Battery>>,
+    inverter: Option<Arc<dyn Inverter>>,
 }
 
 impl SafetyMonitor {
@@ -250,9 +256,23 @@ impl SafetyMonitor {
             config,
             state: Arc::new(RwLock::new(SafetyMonitorState::default())),
             command_tx,
+            battery: None,
+            inverter: None,
         };
 
         (monitor, command_rx)
+    }
+
+    /// Set hardware references for direct emergency shutdown
+    /// CRITICAL: Must be called during initialization to enable hardware-level safety
+    pub fn set_hardware(
+        &mut self,
+        battery: Option<Arc<dyn Battery>>,
+        inverter: Option<Arc<dyn Inverter>>,
+    ) {
+        self.battery = battery;
+        self.inverter = inverter;
+        info!("Safety monitor hardware references configured");
     }
 
     /// Get current state
@@ -272,8 +292,17 @@ impl SafetyMonitor {
         let mut violations = Vec::new();
 
         // Check fuse overcurrent
-        let grid_current_a =
-            measurements.grid_import_kw * 1000.0 / measurements.grid_nominal_voltage_v;
+        // CRITICAL FIX: Protect against division by zero/near-zero voltage
+        let grid_current_a = if measurements.grid_nominal_voltage_v < 1.0 {
+            // Voltage sensor fault or blackout - assume maximum current to trigger safety
+            warn!(
+                "Grid voltage sensor fault or blackout ({}V < 1V) - assuming max current",
+                measurements.grid_nominal_voltage_v
+            );
+            self.config.fuse_rating_a * 2.0 // Trigger overcurrent fault
+        } else {
+            measurements.grid_import_kw * 1000.0 / measurements.grid_nominal_voltage_v
+        };
         let fuse_trip_threshold = self.config.fuse_rating_a * (1.0 - self.config.fuse_trip_margin);
 
         if grid_current_a > fuse_trip_threshold {
@@ -427,7 +456,27 @@ impl SafetyMonitor {
                 error!("TRIGGERING EMERGENCY STOP due to safety violation");
                 state.emergency_stop_active = true;
 
-                // Broadcast emergency stop command
+                // CRITICAL FIX: Direct hardware shutdown (bypasses message passing)
+                // This ensures shutdown even if control loop is hung
+                drop(state); // Release lock before calling hardware
+
+                if let Some(battery) = &self.battery {
+                    if let Err(e) = battery.emergency_shutdown().await {
+                        error!("Failed to execute battery emergency shutdown: {}", e);
+                    } else {
+                        info!("Battery emergency shutdown executed successfully");
+                    }
+                }
+
+                if let Some(inverter) = &self.inverter {
+                    if let Err(e) = inverter.emergency_shutdown().await {
+                        error!("Failed to execute inverter emergency shutdown: {}", e);
+                    } else {
+                        info!("Inverter emergency shutdown executed successfully");
+                    }
+                }
+
+                // Broadcast emergency stop command (for non-hardware components)
                 let cmd = SafetyCommand::EmergencyStop(violations[0].clone());
                 if let Err(e) = self.command_tx.send(cmd) {
                     error!("Failed to broadcast emergency stop command: {}", e);

@@ -131,6 +131,11 @@ pub trait Battery: Send + Sync {
     async fn reconnect(&self) -> Result<()> {
         Ok(())
     }
+
+    /// Emergency shutdown - immediately stop all battery operations
+    /// This method bypasses all locks and queues for direct hardware control
+    /// Called by SafetyMonitor when critical violations detected
+    async fn emergency_shutdown(&self) -> Result<()>;
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
@@ -358,6 +363,14 @@ impl Battery for SimulatedBattery {
             HealthStatus::Offline
         })
     }
+
+    async fn emergency_shutdown(&self) -> Result<()> {
+        // Immediately set power to zero and enter standby mode
+        let mut state = self.state.write().await;
+        state.power_w = 0.0;
+        state.status = BatteryStatus::Standby;
+        Ok(())
+    }
 }
 
 pub struct MockBattery {
@@ -395,5 +408,10 @@ impl Battery for MockBattery {
     }
     async fn health_check(&self) -> Result<HealthStatus> {
         Ok(HealthStatus::Healthy)
+    }
+
+    async fn emergency_shutdown(&self) -> Result<()> {
+        // Mock implementation - no-op
+        Ok(())
     }
 }

@@ -122,7 +122,7 @@ pub fn auth_layer(token: String) -> AuthLayer {
 }
 
 #[derive(Debug, Clone)]
-pub struct AuthBearer(pub uuid::Uuid);
+pub struct AuthBearer;
 
 #[axum::async_trait]
 impl<S> FromRequestParts<S> for AuthBearer
@@ -132,7 +132,7 @@ where
     type Rejection = StatusCode;
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         extract_bearer_token(&parts.headers)
-            .map(|_| Self(uuid::Uuid::new_v4()))
+            .map(|_| Self)
             .ok_or(StatusCode::UNAUTHORIZED)
     }
 }
