@@ -8,7 +8,6 @@
 //! - Optimizing database indices
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};

@@ -2,7 +2,6 @@
 use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode, HeaderMap, Request},
-    middleware::{self, Next},
     response::Response,
     body::Body,
 };

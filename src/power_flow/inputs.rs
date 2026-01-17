@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_power_flow_inputs_creation() {
-        let inputs = PowerFlowInputs::new(5.0, 3.0, 50.0, 25.0, 1.5);
+        let inputs = PowerFlowInputs::new(5.0, 3.0, 50.0, 25.0, 1.5, chrono::Utc::now());
         assert_eq!(inputs.pv_production_kw, 5.0);
         assert_eq!(inputs.house_load_kw, 3.0);
         assert!(inputs.validate().is_ok());
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_power_flow_inputs_validation() {
-        let mut inputs = PowerFlowInputs::new(5.0, 3.0, 50.0, 25.0, 1.5);
+        let mut inputs = PowerFlowInputs::new(5.0, 3.0, 50.0, 25.0, 1.5, chrono::Utc::now());
         inputs.battery_soc_percent = 110.0; // Invalid
         assert!(inputs.validate().is_err());
     }

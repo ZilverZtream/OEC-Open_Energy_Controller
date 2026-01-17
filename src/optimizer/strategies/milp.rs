@@ -348,14 +348,11 @@ mod tests {
         let state = SystemState {
             battery: BatteryState {
                 soc_percent: 50.0,
-                soc_kwh: 5.0,
                 power_w: 0.0,
                 voltage_v: 48.0,
-                current_a: 0.0,
                 temperature_c: 25.0,
-                status: crate::domain::BatteryStatus::Ready,
+                status: crate::domain::BatteryStatus::Idle,
                 health_percent: 100.0,
-                cycles: 0,
             },
         };
         let constraints = Constraints::default();
@@ -395,14 +392,11 @@ mod tests {
         let state = SystemState {
             battery: BatteryState {
                 soc_percent: 20.0, // Start at minimum
-                soc_kwh: 2.0,
                 power_w: 0.0,
                 voltage_v: 48.0,
-                current_a: 0.0,
                 temperature_c: 25.0,
-                status: crate::domain::BatteryStatus::Ready,
+                status: crate::domain::BatteryStatus::Idle,
                 health_percent: 100.0,
-                cycles: 0,
             },
         };
         let constraints = Constraints::default();

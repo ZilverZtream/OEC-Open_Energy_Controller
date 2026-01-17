@@ -4,7 +4,7 @@
 //! This module provides weather data for forecasting solar production and
 //! energy consumption patterns.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, FixedOffset};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

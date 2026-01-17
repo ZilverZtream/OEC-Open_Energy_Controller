@@ -631,6 +631,8 @@ mod tests {
             degradation_per_cycle: 0.0001,
             min_soc_percent: 10.0,
             max_soc_percent: 95.0,
+            replacement_cost_sek: 50000.0,
+            ambient_temp_c: 15.0,
         };
 
         assert!(config.validate().is_ok());
@@ -647,6 +649,8 @@ mod tests {
             degradation_per_cycle: 0.0001,
             min_soc_percent: 10.0,
             max_soc_percent: 95.0,
+            replacement_cost_sek: 50000.0,
+            ambient_temp_c: 15.0,
         };
 
         assert!(config.validate().is_err());

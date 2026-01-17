@@ -249,7 +249,7 @@ impl Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
+    use chrono::{NaiveDate, Timelike};
 
     #[test]
     fn test_environment_initialization() {

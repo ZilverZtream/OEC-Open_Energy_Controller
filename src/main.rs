@@ -1,25 +1,6 @@
-mod api;
-mod auth;
-mod config;
-mod controller;
-#[cfg(feature = "db")]
-mod database;
-mod discovery;
-mod domain;
-mod forecast;
-mod hardware;
-mod ml;
-mod modbus;
-mod ocpp;
-mod optimizer;
-mod power_flow;
-mod repo;
-mod simulation;
-mod telemetry;
-mod utils;
-
 use anyhow::Result;
 use axum::Router;
+use open_energy_controller::{api, config, controller, telemetry};
 use config::Config;
 use telemetry::init_tracing;
 use tracing::{info, warn};

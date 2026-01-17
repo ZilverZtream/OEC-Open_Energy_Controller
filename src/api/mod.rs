@@ -15,7 +15,7 @@ pub mod schedule;
 pub mod forecast;
 pub mod optimize;
 
-use axum::{Router, body::Body, extract::Request};
+use axum::Router;
 use tower_http::{cors::CorsLayer, trace::TraceLayer, timeout::TimeoutLayer};
 use std::time::Duration;
 use tower::ServiceBuilder;
@@ -27,7 +27,7 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
         .nest("/api/v1", v1::router(state, cfg));
 
     if cfg.server.enable_cors {
-        use tower_http::cors::{AllowOrigin, Any};
+        use tower_http::cors::AllowOrigin;
         let cors = CorsLayer::new()
             .allow_origin(AllowOrigin::exact("http://localhost:3000".parse().unwrap()))
             .allow_methods([
@@ -61,7 +61,7 @@ pub fn with_swagger(app: Router) -> Router {
 }
 
 #[cfg(feature = "metrics")]
-pub fn with_metrics(app: Router, cfg: &Config) -> Router {
+pub fn with_metrics(app: Router, _cfg: &Config) -> Router {
     use axum_prometheus::PrometheusMetricLayer;
     let (layer, handle) = PrometheusMetricLayer::pair();
 

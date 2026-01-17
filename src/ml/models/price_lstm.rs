@@ -55,7 +55,7 @@ impl PriceLstmModel {
         coefficients: Vec<f64>,
         intercept: f64,
     ) -> Self {
-        let n_features = Self::calculate_feature_count(lookback_hours);
+        let _n_features = Self::calculate_feature_count(lookback_hours);
         let feature_names = Self::generate_feature_names(lookback_hours);
 
         let metadata = ModelMetadata {
