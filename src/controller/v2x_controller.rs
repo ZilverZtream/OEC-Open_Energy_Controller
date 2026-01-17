@@ -16,11 +16,10 @@ use chrono::{DateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::controller::safety_monitor::SafetyMonitor;
-use crate::domain::{EvCharger, ChargerState, V2XCapabilities};
-use crate::optimizer::Constraints;
+use crate::domain::{EvCharger, V2XCapabilities};
 
 /// V2X control mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,7 +155,10 @@ impl V2XController {
         }
 
         // Get charger state
-        let state = self.charger.read_state().await
+        let state = self
+            .charger
+            .read_state()
+            .await
             .context("Failed to read charger state")?;
 
         // Check if vehicle is connected
@@ -217,7 +219,8 @@ impl V2XController {
         let available_soc = vehicle_soc - config.min_driving_range_soc;
         let discharge_factor = (available_soc / 50.0).min(1.0); // Scale from 0-1
 
-        let target_power = config.max_discharge_power_w
+        let target_power = config
+            .max_discharge_power_w
             .min(v2x_caps.max_discharge_power_w)
             * discharge_factor;
 
@@ -232,56 +235,6 @@ impl V2XController {
             },
             vehicle_soc,
         })
-    }
-
-    /// Execute V2X control decision
-    pub async fn execute_decision(&self, decision: &V2XDecision) -> Result<()> {
-        let state = self.charger.read_state().await?;
-
-        if decision.should_discharge {
-            // CRITICAL SAFETY FIX: Validate power command before execution
-            let v2x_caps = self.capabilities.as_ref()
-                .context("V2X capabilities not available")?;
-
-            if decision.target_power_w > v2x_caps.max_discharge_power_w {
-                anyhow::bail!(
-                    "V2X power command {}W exceeds maximum discharge power {}W",
-                    decision.target_power_w,
-                    v2x_caps.max_discharge_power_w
-                );
-            }
-
-            if !decision.target_power_w.is_finite() {
-                anyhow::bail!("Invalid V2X power command: value is not finite");
-            }
-
-            info!(
-                "V2X: Starting discharge - {} W (reason: {}, SoC: {:.1}%)",
-                decision.target_power_w, decision.reason, decision.vehicle_soc
-            );
-
-            // Start discharging if not already
-            if !state.discharging {
-                self.charger.start_discharging().await
-                    .context("Failed to start V2X discharge")?;
-            }
-
-            // Set discharge power
-            self.charger.set_discharge_power(decision.target_power_w).await
-                .context("Failed to set V2X discharge power")?;
-
-            debug!("V2X discharge active: {} W", decision.target_power_w);
-        } else {
-            // Stop discharging if currently active
-            if state.discharging {
-                info!("V2X: Stopping discharge (reason: {})", decision.reason);
-
-                self.charger.stop_discharging().await
-                    .context("Failed to stop V2X discharge")?;
-            }
-        }
-
-        Ok(())
     }
 
     /// Main control loop step
@@ -299,16 +252,11 @@ impl V2XController {
             if safety_state.emergency_stop_active {
                 warn!("V2X control step aborted - emergency stop active");
 
-                // CRITICAL ZOMBIE FIX: Explicitly stop discharging before returning
-                // If the charger was discharging when emergency stop triggered,
-                // we MUST send an explicit stop command to prevent "zombie" state
-                let state = self.charger.read_state().await
+                let state = self
+                    .charger
+                    .read_state()
+                    .await
                     .context("Failed to read charger state during emergency stop")?;
-                if state.discharging {
-                    warn!("V2X: Stopping active discharge due to emergency stop");
-                    self.charger.stop_discharging().await
-                        .context("Failed to stop V2X discharge during emergency")?;
-                }
 
                 return Ok(V2XDecision {
                     should_discharge: false,
@@ -319,27 +267,11 @@ impl V2XController {
             }
         }
 
-        let decision = self.evaluate_discharge_decision(
-            current_price,
-            average_price,
-            current_time,
-        ).await?;
-
-        self.execute_decision(&decision).await?;
+        let decision = self
+            .evaluate_discharge_decision(current_price, average_price, current_time)
+            .await?;
 
         Ok(decision)
-    }
-
-    /// Emergency stop - immediately stop all V2X discharge
-    pub async fn emergency_stop(&self) -> Result<()> {
-        warn!("V2X: Emergency stop triggered");
-
-        let state = self.charger.read_state().await?;
-        if state.discharging {
-            self.charger.stop_discharging().await?;
-        }
-
-        Ok(())
     }
 
     /// Get current V2X statistics
@@ -351,7 +283,11 @@ impl V2XController {
             is_available: self.is_v2x_available(),
             is_enabled: config.mode != V2XMode::Disabled,
             is_discharging: state.discharging,
-            current_discharge_power_w: if state.discharging { -state.power_w } else { 0.0 },
+            current_discharge_power_w: if state.discharging {
+                -state.power_w
+            } else {
+                0.0
+            },
             total_energy_discharged_kwh: state.energy_discharged_kwh,
             vehicle_soc_percent: state.vehicle_soc_percent,
             min_driving_range_soc: config.min_driving_range_soc,
@@ -374,7 +310,7 @@ pub struct V2XStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{SimulatedEvCharger, ChargerStatus};
+    use crate::domain::{ChargerStatus, SimulatedEvCharger};
     use chrono::TimeZone;
 
     #[tokio::test]
@@ -388,7 +324,8 @@ mod tests {
         let controller = V2XController::new(charger, config);
 
         let now = Utc::now();
-        let decision = controller.evaluate_discharge_decision(2.0, 1.0, now)
+        let decision = controller
+            .evaluate_discharge_decision(2.0, 1.0, now)
             .await
             .unwrap();
 
@@ -407,7 +344,8 @@ mod tests {
         let controller = V2XController::new(charger, config);
 
         let now = Utc::now();
-        let decision = controller.evaluate_discharge_decision(2.0, 1.0, now)
+        let decision = controller
+            .evaluate_discharge_decision(2.0, 1.0, now)
             .await
             .unwrap();
 
@@ -435,7 +373,8 @@ mod tests {
         let controller = V2XController::new(charger, config);
 
         let now = Utc::now();
-        let decision = controller.evaluate_discharge_decision(2.0, 1.0, now)
+        let decision = controller
+            .evaluate_discharge_decision(2.0, 1.0, now)
             .await
             .unwrap();
 
@@ -466,19 +405,27 @@ mod tests {
 
         // Test during peak hours (6 PM)
         let peak_time = Utc.with_ymd_and_hms(2024, 6, 21, 18, 0, 0).unwrap();
-        let decision = controller.evaluate_discharge_decision(2.0, 1.0, peak_time)
+        let decision = controller
+            .evaluate_discharge_decision(2.0, 1.0, peak_time)
             .await
             .unwrap();
 
-        assert!(decision.should_discharge, "Should discharge during peak hours");
+        assert!(
+            decision.should_discharge,
+            "Should discharge during peak hours"
+        );
 
         // Test outside peak hours (10 AM)
         let off_peak = Utc.with_ymd_and_hms(2024, 6, 21, 10, 0, 0).unwrap();
-        let decision = controller.evaluate_discharge_decision(2.0, 1.0, off_peak)
+        let decision = controller
+            .evaluate_discharge_decision(2.0, 1.0, off_peak)
             .await
             .unwrap();
 
-        assert!(!decision.should_discharge, "Should not discharge outside peak hours");
+        assert!(
+            !decision.should_discharge,
+            "Should not discharge outside peak hours"
+        );
         assert_eq!(decision.reason, "outside_peak_hours");
     }
 
@@ -506,16 +453,24 @@ mod tests {
         let now = Utc::now();
 
         // High price (above threshold)
-        let decision = controller.evaluate_discharge_decision(2.0, 1.0, now)
+        let decision = controller
+            .evaluate_discharge_decision(2.0, 1.0, now)
             .await
             .unwrap();
-        assert!(decision.should_discharge, "Should discharge when price is high");
+        assert!(
+            decision.should_discharge,
+            "Should discharge when price is high"
+        );
 
         // Low price (below threshold)
-        let decision = controller.evaluate_discharge_decision(1.2, 1.0, now)
+        let decision = controller
+            .evaluate_discharge_decision(1.2, 1.0, now)
             .await
             .unwrap();
-        assert!(!decision.should_discharge, "Should not discharge when price is low");
+        assert!(
+            !decision.should_discharge,
+            "Should not discharge when price is low"
+        );
         assert!(decision.reason.contains("price_too_low"));
     }
 }

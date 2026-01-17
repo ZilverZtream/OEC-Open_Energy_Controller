@@ -2,10 +2,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-
 /// Power snapshot representing all energy flows at a single point in time
 ///
-/// Power balance equation: PV + Battery + Grid = House + EV
+/// Power balance equation: PV + Battery + Grid = House + EV (EV may be negative when discharging)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PowerSnapshot {
     /// Solar PV production (always positive)
@@ -17,7 +16,7 @@ pub struct PowerSnapshot {
     /// Battery power (positive = charging, negative = discharging)
     pub battery_kw: f64,
 
-    /// EV charger power (always positive when charging)
+    /// EV charger power (positive = charging, negative = discharging)
     pub ev_kw: f64,
 
     /// Grid power (positive = import, negative = export)
@@ -57,14 +56,15 @@ impl PowerSnapshot {
     /// WARNING: Only use this for testing or when data collection is instantaneous.
     /// For production code with real sensors, capture timestamp before polling
     /// and use new() with explicit timestamp.
-    pub fn new_now(
-        pv_kw: f64,
-        house_kw: f64,
-        battery_kw: f64,
-        ev_kw: f64,
-        grid_kw: f64,
-    ) -> Self {
-        Self::new(pv_kw, house_kw, battery_kw, ev_kw, grid_kw, chrono::Utc::now())
+    pub fn new_now(pv_kw: f64, house_kw: f64, battery_kw: f64, ev_kw: f64, grid_kw: f64) -> Self {
+        Self::new(
+            pv_kw,
+            house_kw,
+            battery_kw,
+            ev_kw,
+            grid_kw,
+            chrono::Utc::now(),
+        )
     }
 
     /// Verify power balance holds (sources = sinks)

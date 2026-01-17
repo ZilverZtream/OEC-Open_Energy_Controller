@@ -88,6 +88,41 @@ impl PowerFlowModel {
         available_pv_kw: f64,
         house_deficit_kw: f64,
     ) -> Result<(f64, f64), String> {
+        if let Some(target_w) = inputs.ev_target_power_w {
+            let target_kw = target_w / 1000.0;
+            if target_kw < 0.0 {
+                if let Some(ev) = &inputs.ev_state {
+                    if !ev.connected {
+                        return Ok((0.0, available_pv_kw));
+                    }
+                }
+
+                let max_discharge_kw = inputs
+                    .ev_state
+                    .as_ref()
+                    .map(|ev| ev.max_discharge_kw)
+                    .unwrap_or_else(|| self.evse_max_power_kw());
+
+                let export_headroom_kw = (self.constraints.physical.max_grid_export_kw
+                    + house_deficit_kw
+                    - available_pv_kw)
+                    .max(0.0);
+                let desired_discharge_kw = target_kw
+                    .abs()
+                    .min(max_discharge_kw)
+                    .min(export_headroom_kw);
+                let evse_min_kw = self.evse_min_power_kw();
+
+                let ev_kw = if desired_discharge_kw >= evse_min_kw {
+                    -desired_discharge_kw
+                } else {
+                    0.0
+                };
+
+                return Ok((ev_kw, available_pv_kw));
+            }
+        }
+
         let ev_state = match &inputs.ev_state {
             Some(ev) if ev.connected && ev.needs_charging() => ev,
             _ => return Ok((0.0, available_pv_kw)), // No EV or doesn't need charging
@@ -293,6 +328,7 @@ impl PowerFlowModel {
 mod tests {
     use super::*;
     use crate::power_flow::inputs::EvState;
+    use chrono::Utc;
 
     fn test_constraints() -> AllConstraints {
         let mut constraints = AllConstraints::default();
@@ -411,6 +447,33 @@ mod tests {
             "EV should honor target power"
         );
         assert!(!snapshot.exceeds_fuse_limit(20.0));
+        assert!(snapshot.verify_power_balance());
+    }
+
+    #[test]
+    fn test_ev_target_discharge_applied() {
+        let model = PowerFlowModel::new(test_constraints());
+
+        let ev_state = EvState {
+            connected: true,
+            soc_percent: 80.0,
+            capacity_kwh: 75.0,
+            max_charge_kw: 11.0,
+            max_discharge_kw: 7.0,
+            departure_time: None,
+            target_soc_percent: 80.0,
+        };
+
+        let inputs = PowerFlowInputs::new_now(0.0, 2.0, 50.0, 25.0, 1.5)
+            .with_ev_state(ev_state)
+            .with_ev_target_power_w(-4000.0);
+
+        let snapshot = model.compute_flows(&inputs).unwrap();
+
+        assert!(
+            (snapshot.ev_kw + 4.0).abs() < 0.01,
+            "EV should honor discharge target power"
+        );
         assert!(snapshot.verify_power_balance());
     }
 }
