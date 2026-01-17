@@ -3,14 +3,14 @@
 use super::{AllConstraints, PowerFlowInputs, PowerSnapshot};
 
 // EV Charging Urgency Thresholds
-const EV_HIGH_URGENCY_THRESHOLD: f64 = 0.8;   // Above this: use max power even if importing
+const EV_HIGH_URGENCY_THRESHOLD: f64 = 0.8; // Above this: use max power even if importing
 const EV_MEDIUM_URGENCY_THRESHOLD: f64 = 0.3; // Above this: use PV + some grid
-// Below MEDIUM_URGENCY_THRESHOLD: only use excess PV
+                                              // Below MEDIUM_URGENCY_THRESHOLD: only use excess PV
 
 // Battery SoC Management Thresholds
-const BATTERY_LOW_SOC_MULTIPLIER: f64 = 0.7;  // When to charge from cheap grid (70% of max_soc)
+const BATTERY_LOW_SOC_MULTIPLIER: f64 = 0.7; // When to charge from cheap grid (70% of max_soc)
 const BATTERY_MIN_POWER_THRESHOLD_KW: f64 = 0.1; // Minimum power difference to act on
-const BATTERY_HYSTERESIS_PERCENT: f64 = 2.0;  // SoC buffer to prevent oscillation at min_soc
+const BATTERY_HYSTERESIS_PERCENT: f64 = 2.0; // SoC buffer to prevent oscillation at min_soc
 
 // Grid Price Arbitrage Thresholds
 const CHEAP_GRID_PRICE_MULTIPLIER: f64 = 0.5; // Charge when price < threshold * 0.5
@@ -54,25 +54,16 @@ impl PowerFlowModel {
         let house_deficit = house_kw - pv_to_house;
 
         // Step 3: Calculate EV charging urgency and allocate power
-        let (ev_kw, remaining_pv_after_ev) = self.allocate_ev_power(
-            &inputs,
-            remaining_pv,
-        )?;
+        let (ev_kw, remaining_pv_after_ev) =
+            self.allocate_ev_power(&inputs, remaining_pv, house_deficit)?;
 
         // Step 4: Battery power decision (charge, discharge, or idle)
-        let (battery_kw, _remaining_pv_after_battery) = self.decide_battery_power(
-            &inputs,
-            remaining_pv_after_ev,
-            house_deficit,
-        );
+        let (battery_kw, _remaining_pv_after_battery) =
+            self.decide_battery_power(&inputs, remaining_pv_after_ev, house_deficit);
 
         // Step 5: Grid power (import/export)
-        let grid_kw = self.calculate_grid_power(
-            house_kw,
-            inputs.pv_production_kw,
-            battery_kw,
-            ev_kw,
-        );
+        let grid_kw =
+            self.calculate_grid_power(house_kw, inputs.pv_production_kw, battery_kw, ev_kw);
 
         // Create power snapshot
         let snapshot = PowerSnapshot {
@@ -95,6 +86,7 @@ impl PowerFlowModel {
         &self,
         inputs: &PowerFlowInputs,
         available_pv_kw: f64,
+        house_deficit_kw: f64,
     ) -> Result<(f64, f64), String> {
         let ev_state = match &inputs.ev_state {
             Some(ev) if ev.connected && ev.needs_charging() => ev,
@@ -105,9 +97,11 @@ impl PowerFlowModel {
         let urgency = ev_state.urgency_factor(inputs.timestamp);
 
         // Determine EV charge power based on urgency and available power
-        let desired_ev_kw = if urgency > EV_HIGH_URGENCY_THRESHOLD {
+        let computed_ev_kw = if urgency > EV_HIGH_URGENCY_THRESHOLD {
             // High urgency: use max power even if it means importing from grid
-            ev_state.max_charge_kw.min(self.constraints.physical.max_grid_import_kw)
+            ev_state
+                .max_charge_kw
+                .min(self.constraints.physical.max_grid_import_kw)
         } else if urgency > EV_MEDIUM_URGENCY_THRESHOLD {
             // Medium urgency: use available PV + some grid if needed
             let min_kw = available_pv_kw;
@@ -121,12 +115,24 @@ impl PowerFlowModel {
             available_pv_kw
         };
 
+        let desired_ev_kw = match inputs.ev_target_power_w {
+            Some(target_w) => (target_w / 1000.0).max(0.0),
+            None => computed_ev_kw,
+        };
+
         // Apply EV charger min/max current limits
         let evse_min_kw = self.evse_min_power_kw();
         let evse_max_kw = self.evse_max_power_kw();
 
+        let max_ev_kw_by_fuse = (self.constraints.physical.max_grid_import_kw - house_deficit_kw
+            + available_pv_kw)
+            .max(0.0);
+
         let ev_kw = if desired_ev_kw >= evse_min_kw {
-            desired_ev_kw.min(evse_max_kw).min(ev_state.max_charge_kw)
+            desired_ev_kw
+                .min(evse_max_kw)
+                .min(ev_state.max_charge_kw)
+                .min(max_ev_kw_by_fuse)
         } else {
             0.0 // Below minimum, don't charge at all
         };
@@ -188,8 +194,7 @@ impl PowerFlowModel {
 
         // Case 1: Excess PV available - charge battery
         if available_pv_kw > BATTERY_MIN_POWER_THRESHOLD_KW && soc < max_soc {
-            let charge_kw = available_pv_kw
-                .min(self.constraints.physical.max_battery_charge_kw);
+            let charge_kw = available_pv_kw.min(self.constraints.physical.max_battery_charge_kw);
             return (charge_kw, available_pv_kw - charge_kw);
         }
 
@@ -200,20 +205,25 @@ impl PowerFlowModel {
             let threshold = self.constraints.economic.arbitrage_threshold_sek_kwh;
 
             if price > threshold || self.constraints.economic.prefer_self_consumption {
-                let discharge_kw = house_deficit_kw
-                    .min(self.constraints.physical.max_battery_discharge_kw);
+                let discharge_kw =
+                    house_deficit_kw.min(self.constraints.physical.max_battery_discharge_kw);
                 return (-discharge_kw, available_pv_kw);
             }
         }
 
         // Case 3: Cheap grid price and low SoC - charge from grid
-        let cheap_grid_threshold = self.constraints.economic.arbitrage_threshold_sek_kwh * CHEAP_GRID_PRICE_MULTIPLIER;
+        let cheap_grid_threshold =
+            self.constraints.economic.arbitrage_threshold_sek_kwh * CHEAP_GRID_PRICE_MULTIPLIER;
         let low_soc_threshold = max_soc * BATTERY_LOW_SOC_MULTIPLIER;
 
         if inputs.grid_price_sek_kwh < cheap_grid_threshold && soc < low_soc_threshold {
             // CRITICAL FIX: Use configurable charge rate instead of magic number 0.5
             // This allows tuning based on fuse capacity and user preferences
-            let charge_rate = self.constraints.economic.low_price_charge_rate.clamp(0.1, 1.0);
+            let charge_rate = self
+                .constraints
+                .economic
+                .low_price_charge_rate
+                .clamp(0.1, 1.0);
             let charge_kw = self.constraints.physical.max_battery_charge_kw * charge_rate;
             return (charge_kw, available_pv_kw);
         }
@@ -223,13 +233,7 @@ impl PowerFlowModel {
     }
 
     /// Calculate grid power to balance the system
-    fn calculate_grid_power(
-        &self,
-        house_kw: f64,
-        pv_kw: f64,
-        battery_kw: f64,
-        ev_kw: f64,
-    ) -> f64 {
+    fn calculate_grid_power(&self, house_kw: f64, pv_kw: f64, battery_kw: f64, ev_kw: f64) -> f64 {
         // Grid = House + EV + Battery_charge - PV - Battery_discharge
         // Positive = import, negative = export
         let total_load = house_kw + ev_kw + battery_kw.max(0.0);
@@ -290,10 +294,23 @@ mod tests {
     use super::*;
     use crate::power_flow::inputs::EvState;
 
+    fn test_constraints() -> AllConstraints {
+        let mut constraints = AllConstraints::default();
+        constraints.physical.max_grid_import_kw = 20.0;
+        constraints.physical.max_grid_export_kw = 20.0;
+        constraints.physical.max_battery_charge_kw = 10.0;
+        constraints.physical.max_battery_discharge_kw = 10.0;
+        constraints.physical.evse_min_current_a = 6.0;
+        constraints.physical.evse_max_current_a = 32.0;
+        constraints.physical.phases = 1;
+        constraints.physical.grid_voltage_v = 230.0;
+        constraints
+    }
+
     #[test]
     fn test_simple_pv_to_house() {
-        let model = PowerFlowModel::new(AllConstraints::default());
-        let inputs = PowerFlowInputs::new(5.0, 3.0, 50.0, 25.0, 1.5);
+        let model = PowerFlowModel::new(test_constraints());
+        let inputs = PowerFlowInputs::new_now(5.0, 3.0, 50.0, 25.0, 1.5);
 
         let snapshot = model.compute_flows(&inputs).unwrap();
 
@@ -305,8 +322,8 @@ mod tests {
 
     #[test]
     fn test_excess_pv_charges_battery() {
-        let model = PowerFlowModel::new(AllConstraints::default());
-        let inputs = PowerFlowInputs::new(10.0, 3.0, 50.0, 25.0, 1.5);
+        let model = PowerFlowModel::new(test_constraints());
+        let inputs = PowerFlowInputs::new_now(10.0, 3.0, 50.0, 25.0, 1.5);
 
         let snapshot = model.compute_flows(&inputs).unwrap();
 
@@ -317,19 +334,22 @@ mod tests {
 
     #[test]
     fn test_high_price_discharges_battery() {
-        let model = PowerFlowModel::new(AllConstraints::default());
-        let inputs = PowerFlowInputs::new(0.0, 5.0, 80.0, 25.0, 3.0); // High price
+        let model = PowerFlowModel::new(test_constraints());
+        let inputs = PowerFlowInputs::new_now(0.0, 5.0, 80.0, 25.0, 3.0); // High price
 
         let snapshot = model.compute_flows(&inputs).unwrap();
 
         // Should discharge battery due to high price
-        assert!(snapshot.battery_kw <= 0.0, "Battery should be discharging or idle");
+        assert!(
+            snapshot.battery_kw <= 0.0,
+            "Battery should be discharging or idle"
+        );
         assert!(snapshot.verify_power_balance());
     }
 
     #[test]
     fn test_ev_charging_urgent() {
-        let model = PowerFlowModel::new(AllConstraints::default());
+        let model = PowerFlowModel::new(test_constraints());
 
         let departure = Utc::now() + chrono::Duration::hours(2);
         let ev_state = EvState {
@@ -342,8 +362,7 @@ mod tests {
             target_soc_percent: 80.0,
         };
 
-        let inputs = PowerFlowInputs::new(5.0, 3.0, 50.0, 25.0, 1.5)
-            .with_ev_state(ev_state);
+        let inputs = PowerFlowInputs::new_now(5.0, 3.0, 50.0, 25.0, 1.5).with_ev_state(ev_state);
 
         let snapshot = model.compute_flows(&inputs).unwrap();
 
@@ -354,15 +373,44 @@ mod tests {
 
     #[test]
     fn test_fuse_limit_protection() {
-        let mut constraints = AllConstraints::default();
+        let mut constraints = test_constraints();
         constraints.physical.max_grid_import_kw = 10.0;
 
         let model = PowerFlowModel::new(constraints);
-        let inputs = PowerFlowInputs::new(0.0, 15.0, 20.0, 25.0, 1.5);
+        let inputs = PowerFlowInputs::new_now(0.0, 15.0, 80.0, 25.0, 1.5);
 
         let snapshot = model.compute_flows(&inputs).unwrap();
 
         // Should not exceed fuse limit
         assert!(!snapshot.exceeds_fuse_limit(10.0));
+    }
+
+    #[test]
+    fn test_ev_target_power_applied() {
+        let model = PowerFlowModel::new(test_constraints());
+
+        let departure = Utc::now() + chrono::Duration::hours(24);
+        let ev_state = EvState {
+            connected: true,
+            soc_percent: 20.0,
+            capacity_kwh: 75.0,
+            max_charge_kw: 11.0,
+            max_discharge_kw: 0.0,
+            departure_time: Some(departure),
+            target_soc_percent: 80.0,
+        };
+
+        let inputs = PowerFlowInputs::new_now(2.0, 4.0, 50.0, 25.0, 1.5)
+            .with_ev_state(ev_state)
+            .with_ev_target_power_w(6000.0);
+
+        let snapshot = model.compute_flows(&inputs).unwrap();
+
+        assert!(
+            (snapshot.ev_kw - 6.0).abs() < 0.01,
+            "EV should honor target power"
+        );
+        assert!(!snapshot.exceeds_fuse_limit(20.0));
+        assert!(snapshot.verify_power_balance());
     }
 }
