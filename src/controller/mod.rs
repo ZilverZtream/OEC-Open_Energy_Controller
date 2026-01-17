@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 pub mod pid;
+pub mod power_transition;
 pub mod safety;
+pub mod safety_monitor;
 pub mod scheduler;
 
 use anyhow::{bail, Result};

@@ -14,6 +14,7 @@ mod ocpp;
 mod optimizer;
 mod power_flow;
 mod repo;
+mod simulation;
 mod telemetry;
 
 use anyhow::Result;

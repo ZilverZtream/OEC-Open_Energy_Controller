@@ -2792,6 +2792,7 @@ dependencies = [
  "prometheus",
  "proptest",
  "rand 0.8.5",
+ "rand_distr",
  "reqwest",
  "reqwest-middleware",
  "reqwest-retry",

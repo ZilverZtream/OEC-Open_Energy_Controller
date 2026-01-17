@@ -38,3 +38,5 @@ pub mod prices;
 pub mod consumption;
 #[cfg(feature = "db")]
 pub mod production;
+#[cfg(feature = "db")]
+pub mod snapshots;
