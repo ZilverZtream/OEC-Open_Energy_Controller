@@ -332,7 +332,16 @@ impl ThreePhaseSimulator {
             };
 
             let excess_current = phase_current.abs() - self.phase_fuse_rating_a;
-            let curtailment_w = excess_current * self.nominal_voltage_v;
+
+            // CRITICAL PHYSICS FIX: Account for balanced 3-phase inverter output
+            // Most residential inverters output balanced power across all 3 phases.
+            // To reduce current on L1 by 10A, the inverter must reduce TOTAL power by 3×(10A×230V).
+            // Example: To fix a 10A overload on L1:
+            //   - Single-phase calculation: 10A × 230V = 2.3kW (WRONG)
+            //   - Balanced 3-phase:        3 × (10A × 230V) = 6.9kW (CORRECT)
+            // Without this fix, the controller under-curtails and the fuse still blows.
+            let curtailment_per_phase = excess_current * self.nominal_voltage_v;
+            let curtailment_w = curtailment_per_phase * 3.0;
 
             (true, curtailment_w)
         } else {

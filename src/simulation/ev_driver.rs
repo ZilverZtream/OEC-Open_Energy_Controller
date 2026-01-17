@@ -349,7 +349,12 @@ impl EVDriverSimulator {
             self.config.morning_departure_std_hours,
         )
         .unwrap();
-        normal.sample(&mut self.rng).clamp(5.0, 12.0)
+        // CRITICAL CONFIG FIX: Respect user config - don't hardcode limits
+        // Previous code clamped to 5.0-12.0, ignoring night shift workers
+        // New: Use config ± 3 std deviations for clamping (covers 99.7% of cases)
+        let min_hour = (self.config.morning_departure_hour - 3.0 * self.config.morning_departure_std_hours).max(0.0);
+        let max_hour = (self.config.morning_departure_hour + 3.0 * self.config.morning_departure_std_hours).min(24.0);
+        normal.sample(&mut self.rng).clamp(min_hour, max_hour)
     }
 
     /// Sample evening arrival time
@@ -359,7 +364,10 @@ impl EVDriverSimulator {
             self.config.evening_arrival_std_hours,
         )
         .unwrap();
-        normal.sample(&mut self.rng).clamp(14.0, 22.0)
+        // CRITICAL CONFIG FIX: Respect user config - use dynamic clamping
+        let min_hour = (self.config.evening_arrival_hour - 3.0 * self.config.evening_arrival_std_hours).max(0.0);
+        let max_hour = (self.config.evening_arrival_hour + 3.0 * self.config.evening_arrival_std_hours).min(24.0);
+        normal.sample(&mut self.rng).clamp(min_hour, max_hour)
     }
 
     /// Sample commute distance

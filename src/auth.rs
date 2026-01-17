@@ -102,15 +102,27 @@ where
 }
 
 /// Constant-time comparison to prevent timing attacks
+/// CRITICAL SECURITY FIX: Removed length leak - now uses fixed-size buffer
+///
+/// Previous implementation leaked token length through early return.
+/// New implementation:
+/// - Always iterates over fixed 64-byte buffer
+/// - XORs length difference into result
+/// - No early returns = no timing side channel
 fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
+    const MAX_TOKEN_LEN: usize = 64;
+
+    // XOR the length difference into result (contributes to failure if lengths differ)
+    let mut result = (a.len() ^ b.len()) as u8;
+
+    // Always iterate over full fixed-size buffer regardless of actual lengths
+    // This prevents length-based timing attacks
+    for i in 0..MAX_TOKEN_LEN {
+        let byte_a = a.get(i).copied().unwrap_or(0);
+        let byte_b = b.get(i).copied().unwrap_or(0);
+        result |= byte_a ^ byte_b;
     }
 
-    let mut result = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        result |= x ^ y;
-    }
     result == 0
 }
 

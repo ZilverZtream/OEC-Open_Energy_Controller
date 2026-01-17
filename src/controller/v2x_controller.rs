@@ -298,11 +298,23 @@ impl V2XController {
             let safety_state = safety_monitor.state().await;
             if safety_state.emergency_stop_active {
                 warn!("V2X control step aborted - emergency stop active");
+
+                // CRITICAL ZOMBIE FIX: Explicitly stop discharging before returning
+                // If the charger was discharging when emergency stop triggered,
+                // we MUST send an explicit stop command to prevent "zombie" state
+                let state = self.charger.read_state().await
+                    .context("Failed to read charger state during emergency stop")?;
+                if state.discharging {
+                    warn!("V2X: Stopping active discharge due to emergency stop");
+                    self.charger.stop_discharging().await
+                        .context("Failed to stop V2X discharge during emergency")?;
+                }
+
                 return Ok(V2XDecision {
                     should_discharge: false,
                     target_power_w: 0.0,
                     reason: "emergency_stop_active".to_string(),
-                    vehicle_soc: 0.0,
+                    vehicle_soc: state.vehicle_soc_percent.unwrap_or(0.0),
                 });
             }
         }

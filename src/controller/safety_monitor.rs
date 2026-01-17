@@ -14,6 +14,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info, warn};
@@ -105,7 +106,7 @@ impl SafetyMonitorConfig {
 }
 
 /// Safety violation type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SafetyViolationType {
     /// Grid import current exceeds fuse limit
     FuseOvercurrent,
@@ -221,6 +222,9 @@ pub struct SafetyMeasurements {
     pub battery_temperature_c: f64,
     /// Grid nominal voltage (V) for current calculation
     pub grid_nominal_voltage_v: f64,
+    /// CRITICAL SAFETY FIX: Timestamp of measurements
+    /// Used to detect stale data (e.g., Modbus thread hung)
+    pub timestamp: DateTime<Utc>,
 }
 
 impl Default for SafetyMeasurements {
@@ -232,6 +236,7 @@ impl Default for SafetyMeasurements {
             battery_soc_percent: 50.0,
             battery_temperature_c: 25.0,
             grid_nominal_voltage_v: 230.0,
+            timestamp: Utc::now(),
         }
     }
 }
@@ -245,6 +250,9 @@ pub struct SafetyMonitor {
     /// CRITICAL: These bypass message passing to ensure shutdown even if control loop hangs
     battery: Option<Arc<dyn Battery>>,
     inverter: Option<Arc<dyn Inverter>>,
+    /// CRITICAL FIX: Rate limiting for violation warnings to prevent log spam / SD card wear
+    /// Maps violation type to last warning timestamp
+    last_warning_time: Arc<RwLock<HashMap<SafetyViolationType, DateTime<Utc>>>>,
 }
 
 impl SafetyMonitor {
@@ -258,6 +266,7 @@ impl SafetyMonitor {
             command_tx,
             battery: None,
             inverter: None,
+            last_warning_time: Arc::new(RwLock::new(HashMap::new())),
         };
 
         (monitor, command_rx)
@@ -290,6 +299,27 @@ impl SafetyMonitor {
     /// Check for safety violations
     pub async fn check_safety(&self, measurements: &SafetyMeasurements) -> Vec<SafetyViolation> {
         let mut violations = Vec::new();
+
+        // CRITICAL SAFETY CHECK: Detect stale measurements
+        // If the Modbus reader thread hangs but leaves old measurements in memory,
+        // we could be validating against data from 5 minutes ago
+        const MAX_MEASUREMENT_AGE_SECONDS: i64 = 10;
+        let now = Utc::now();
+        let measurement_age = (now - measurements.timestamp).num_seconds();
+
+        if measurement_age > MAX_MEASUREMENT_AGE_SECONDS {
+            violations.push(SafetyViolation::new(
+                SafetyViolationType::ControlLoopTimeout,
+                measurement_age as f64,
+                MAX_MEASUREMENT_AGE_SECONDS as f64,
+                format!(
+                    "Stale measurements detected - data is {} seconds old (max: {}s)",
+                    measurement_age, MAX_MEASUREMENT_AGE_SECONDS
+                ),
+            ));
+            // Return early - don't trust stale data for other checks
+            return violations;
+        }
 
         // Check fuse overcurrent
         // CRITICAL FIX: Protect against division by zero/near-zero voltage
@@ -443,13 +473,28 @@ impl SafetyMonitor {
             state.total_violations += violations.len() as u64;
             state.last_violation = Some(violations[0].clone());
 
-            // Log all violations
+            // CRITICAL FIX: Rate-limited logging to prevent log spam / SD card wear
+            // On persistent faults (e.g., undervoltage), this would write 3600 times/hour
+            // New: Only log state changes or once per minute
+            const LOG_RATE_LIMIT_SECONDS: i64 = 60;
+            let now = Utc::now();
+            let mut last_warnings = self.last_warning_time.write().await;
+
             for violation in &violations {
-                warn!(
-                    "SAFETY VIOLATION: {} - {}",
-                    violation.violation_type, violation.message
-                );
+                let should_log = last_warnings
+                    .get(&violation.violation_type)
+                    .map(|last_time| (now - *last_time).num_seconds() >= LOG_RATE_LIMIT_SECONDS)
+                    .unwrap_or(true);
+
+                if should_log {
+                    warn!(
+                        "SAFETY VIOLATION: {} - {}",
+                        violation.violation_type, violation.message
+                    );
+                    last_warnings.insert(violation.violation_type, now);
+                }
             }
+            drop(last_warnings);
 
             // Trigger emergency stop if enabled
             if self.config.enable_emergency_stop && !state.emergency_stop_active {
@@ -546,6 +591,63 @@ impl SafetyMonitor {
     /// Subscribe to safety commands
     pub fn subscribe(&self) -> broadcast::Receiver<SafetyCommand> {
         self.command_tx.subscribe()
+    }
+
+    /// Validate power command against instantaneous safety limits
+    /// CRITICAL SAFETY FIX: Added to prevent controllers from bypassing safety checks
+    ///
+    /// This validates commands against current measurements and limits.
+    /// Returns an error if the command would violate safety constraints.
+    pub async fn validate_power_command(
+        &self,
+        command_description: &str,
+        power_w: f64,
+        measurements: &SafetyMeasurements,
+    ) -> Result<()> {
+        // Check if emergency stop is active
+        let state = self.state.read().await;
+        if state.emergency_stop_active {
+            anyhow::bail!(
+                "Safety validation failed for {}: Emergency stop is active",
+                command_description
+            );
+        }
+        drop(state);
+
+        // Validate power is finite
+        if !power_w.is_finite() {
+            anyhow::bail!(
+                "Safety validation failed for {}: Power value is not finite ({})",
+                command_description,
+                power_w
+            );
+        }
+
+        // Validate against fuse rating (check if this additional power would overload)
+        let voltage_v = if measurements.grid_nominal_voltage_v < 1.0 {
+            self.config.grid_voltage_min_v  // Use minimum valid voltage
+        } else {
+            measurements.grid_nominal_voltage_v
+        };
+
+        // Calculate current that would result from this power command
+        let additional_current_a = power_w.abs() / voltage_v / 1000.0;
+        let current_grid_current_a = measurements.grid_import_kw * 1000.0 / voltage_v;
+        let total_current_a = current_grid_current_a + additional_current_a;
+
+        let fuse_trip_threshold =
+            self.config.fuse_rating_a * (1.0 - self.config.fuse_trip_margin);
+
+        if total_current_a > fuse_trip_threshold {
+            anyhow::bail!(
+                "Safety validation failed for {}: Would exceed fuse limit (total current {:.1}A > {:.1}A threshold)",
+                command_description,
+                total_current_a,
+                fuse_trip_threshold
+            );
+        }
+
+        Ok(())
     }
 }
 

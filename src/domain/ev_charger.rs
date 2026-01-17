@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
@@ -154,8 +155,17 @@ impl Default for V2XCapabilities {
 /// Simulated EV Charger for development and testing
 #[derive(Debug)]
 pub struct SimulatedEvCharger {
-    state: Arc<RwLock<ChargerState>>,
+    pub state: Arc<RwLock<ChargerState>>,
     caps: ChargerCapabilities,
+    /// SIMULATION IMPROVEMENT: Dead Man's Switch / Watchdog
+    /// Tracks last command timestamp to detect controller hangs
+    /// If no command received in 5 seconds, charger enters Fault state
+    /// This tests the controller's keep-alive logic
+    last_command_time: Arc<RwLock<DateTime<Utc>>>,
+    /// Enable watchdog (default: true for realistic simulation)
+    watchdog_enabled: bool,
+    /// Watchdog timeout in seconds
+    watchdog_timeout_seconds: i64,
 }
 
 impl SimulatedEvCharger {
@@ -163,7 +173,56 @@ impl SimulatedEvCharger {
         Self {
             state: Arc::new(RwLock::new(initial)),
             caps,
+            last_command_time: Arc::new(RwLock::new(Utc::now())),
+            watchdog_enabled: true,
+            watchdog_timeout_seconds: 5,
         }
+    }
+
+    /// Disable watchdog for testing scenarios where controller hang detection is not needed
+    pub fn disable_watchdog(&mut self) {
+        self.watchdog_enabled = false;
+    }
+
+    /// Enable watchdog (default on)
+    pub fn enable_watchdog(&mut self, timeout_seconds: i64) {
+        self.watchdog_enabled = true;
+        self.watchdog_timeout_seconds = timeout_seconds;
+    }
+
+    /// Update last command time (called internally by command methods)
+    async fn update_watchdog(&self) {
+        *self.last_command_time.write().await = Utc::now();
+    }
+
+    /// Check if watchdog has timed out and enter fault state if needed
+    /// Should be called periodically by simulation loop
+    pub async fn check_watchdog(&self) -> Result<()> {
+        if !self.watchdog_enabled {
+            return Ok(());
+        }
+
+        let last_cmd = *self.last_command_time.read().await;
+        let elapsed = Utc::now() - last_cmd;
+
+        if elapsed > Duration::seconds(self.watchdog_timeout_seconds) {
+            let mut state = self.state.write().await;
+            if state.charging || state.discharging {
+                // Watchdog timeout - enter fault state
+                state.status = ChargerStatus::Faulted;
+                state.charging = false;
+                state.discharging = false;
+                state.current_amps = 0.0;
+                state.power_w = 0.0;
+                return Err(ChargerError::Fault(format!(
+                    "Watchdog timeout: no command received in {}s",
+                    self.watchdog_timeout_seconds
+                ))
+                .into());
+            }
+        }
+
+        Ok(())
     }
 
     /// Simulate a vehicle connection
@@ -308,6 +367,9 @@ impl EvCharger for SimulatedEvCharger {
     }
 
     async fn set_current(&self, amps: f64) -> Result<()> {
+        // SIMULATION IMPROVEMENT: Update watchdog on command reception
+        self.update_watchdog().await;
+
         let mut st = self.state.write().await;
 
         // Clamp to capabilities
@@ -325,6 +387,9 @@ impl EvCharger for SimulatedEvCharger {
     }
 
     async fn start_charging(&self) -> Result<()> {
+        // SIMULATION IMPROVEMENT: Update watchdog on command reception
+        self.update_watchdog().await;
+
         let mut st = self.state.write().await;
 
         if !st.connected {
@@ -342,6 +407,9 @@ impl EvCharger for SimulatedEvCharger {
     }
 
     async fn stop_charging(&self) -> Result<()> {
+        // SIMULATION IMPROVEMENT: Update watchdog on command reception
+        self.update_watchdog().await;
+
         let mut st = self.state.write().await;
 
         st.charging = false;
@@ -381,6 +449,9 @@ impl EvCharger for SimulatedEvCharger {
             return Err(ChargerError::V2GNotSupported.into());
         }
 
+        // SIMULATION IMPROVEMENT: Update watchdog on command reception
+        self.update_watchdog().await;
+
         let mut st = self.state.write().await;
 
         if !st.connected {
@@ -406,6 +477,9 @@ impl EvCharger for SimulatedEvCharger {
     }
 
     async fn stop_discharging(&self) -> Result<()> {
+        // SIMULATION IMPROVEMENT: Update watchdog on command reception
+        self.update_watchdog().await;
+
         let mut st = self.state.write().await;
 
         st.discharging = false;
@@ -425,6 +499,9 @@ impl EvCharger for SimulatedEvCharger {
         if !self.caps.supports_v2g {
             return Err(ChargerError::V2GNotSupported.into());
         }
+
+        // SIMULATION IMPROVEMENT: Update watchdog on command reception
+        self.update_watchdog().await;
 
         let mut st = self.state.write().await;
 
