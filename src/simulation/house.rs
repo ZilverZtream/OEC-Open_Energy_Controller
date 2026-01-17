@@ -109,6 +109,10 @@ pub struct HouseSimulatorConfig {
     pub noise_std_dev: f64,
     /// Random seed for reproducibility (None = random)
     pub random_seed: Option<u64>,
+    /// CRITICAL FIX #10: "Vampire Load" - constant standby power consumption
+    /// Includes: Raspberry Pi (~5W), Router/Switch (~10W), standby electronics (~5W)
+    /// Default: 0.02 kW = 20W total vampire load
+    pub vampire_load_kw: f64,
 }
 
 impl Default for HouseSimulatorConfig {
@@ -119,6 +123,7 @@ impl Default for HouseSimulatorConfig {
             enable_appliance_events: true,
             noise_std_dev: 0.1, // 10% noise
             random_seed: None,
+            vampire_load_kw: 0.02, // 20W = Raspberry Pi (5W) + Router (10W) + Standby (5W)
         }
     }
 }
@@ -289,7 +294,10 @@ impl HouseSimulator {
         let noise_kw = self.generate_noise();
 
         let base_load_kw = self.config.profile.base_load_kw();
-        let load_kw = (base_load_kw * tod_multiplier + appliance_load_kw + noise_kw).max(0.0);
+        // CRITICAL FIX #10: Add vampire load (constant standby power)
+        // Without this, the battery drains 3-5% faster at night than simulation predicts
+        // Vampire load includes: Raspberry Pi, router, standby electronics (always on)
+        let load_kw = (base_load_kw * tod_multiplier + appliance_load_kw + noise_kw + self.config.vampire_load_kw).max(0.0);
 
         self.current_state = HouseState {
             load_kw,

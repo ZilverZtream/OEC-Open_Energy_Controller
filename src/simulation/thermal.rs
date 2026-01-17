@@ -86,6 +86,20 @@ impl ThermalZone {
     }
 
     pub fn step(&mut self, dt_seconds: f64, outdoor_temp_c: f64, hvac_heat_w: f64, solar_gain_w: f64) {
+        // CRITICAL FIX: Prevent Euler integration instability by clamping time steps
+        // Explicit Euler is numerically unstable if dt exceeds thermal time constant
+        // Loop internally for large time steps to maintain stability
+        const MAX_STEP_SECONDS: f64 = 60.0; // Maximum stable time step
+
+        let mut remaining_time = dt_seconds;
+        while remaining_time > 0.0 {
+            let step_dt = remaining_time.min(MAX_STEP_SECONDS);
+            self.step_internal(step_dt, outdoor_temp_c, hvac_heat_w, solar_gain_w);
+            remaining_time -= step_dt;
+        }
+    }
+
+    fn step_internal(&mut self, dt_seconds: f64, outdoor_temp_c: f64, hvac_heat_w: f64, solar_gain_w: f64) {
         const CEILING_HEIGHT_M: f64 = 2.5;
         const AIR_DENSITY: f64 = 1.2;
         const AIR_SPECIFIC_HEAT: f64 = 1005.0;
@@ -270,6 +284,20 @@ impl HydronicZone {
             return;
         }
 
+        // CRITICAL FIX: Prevent Euler integration instability by clamping time steps
+        // Explicit Euler is numerically unstable if dt exceeds thermal time constant
+        // Loop internally for large time steps to maintain stability
+        const MAX_STEP_SECONDS: f64 = 60.0; // Maximum stable time step
+
+        let mut remaining_time = dt_seconds;
+        while remaining_time > 0.0 {
+            let step_dt = remaining_time.min(MAX_STEP_SECONDS);
+            self.step_internal(step_dt, outdoor_temp_c, hvac_heat_w, solar_gain_w);
+            remaining_time -= step_dt;
+        }
+    }
+
+    fn step_internal(&mut self, dt_seconds: f64, outdoor_temp_c: f64, hvac_heat_w: f64, solar_gain_w: f64) {
         let dt_hours = dt_seconds / 3600.0;
 
         // Calculate heat flows (all in kW for easier math)

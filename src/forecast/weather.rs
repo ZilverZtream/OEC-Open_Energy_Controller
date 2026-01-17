@@ -91,18 +91,37 @@ impl SmhiClient {
 
         match response_result {
             Ok(response) if response.status().is_success() => {
-                // Success path: parse real forecast
-                let smhi_response: SmhiResponse = response
-                    .json()
-                    .await
-                    .context("Failed to parse SMHI response")?;
+                // CRITICAL FIX #12: Panic on "200 OK" Bad JSON
+                // If the API returns HTTP 200 but the schema changed (e.g., field renamed),
+                // serde will return an error. We must NOT crash the heating system!
+                // Instead, fall back to persistence forecast.
 
-                info!(
-                    "Successfully fetched weather forecast from SMHI for location ({}, {})",
-                    location.latitude, location.longitude
-                );
+                // Try to parse JSON
+                let json_parse_result = response
+                    .json::<SmhiResponse>()
+                    .await;
 
-                self.parse_forecast(location.clone(), smhi_response)
+                match json_parse_result {
+                    Ok(smhi_response) => {
+                        // Success: parse real forecast
+                        info!(
+                            "Successfully fetched weather forecast from SMHI for location ({}, {})",
+                            location.latitude, location.longitude
+                        );
+                        self.parse_forecast(location.clone(), smhi_response)
+                    }
+                    Err(e) => {
+                        // JSON parse error: API schema changed or malformed response
+                        error!(
+                            "SMHI API returned 200 OK but JSON parsing failed ({}). \
+                             This usually means the API schema changed. \
+                             Falling back to persistence forecast. \
+                             Heating/charging control will continue with conservative assumptions.",
+                            e
+                        );
+                        Ok(self.generate_persistence_forecast(location.clone()))
+                    }
+                }
             }
             Ok(response) => {
                 // API returned error status
