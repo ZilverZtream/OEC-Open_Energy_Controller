@@ -65,9 +65,8 @@ pub fn router(state: AppState, cfg: &Config) -> Router {
         // Weather routes
         .route("/weather/forecast", get(weather::get_weather_forecast))
         .with_state(state)
-        // TODO: Fix auth layer type inference and re-enable
-        // The auth module exists and works, but needs type adjustments for axum 0.7+
-        // .layer(crate::auth::auth_layer(cfg.auth.token.clone()))
+        // SECURITY: Authentication layer using Bearer token validation with constant-time comparison
+        .layer(crate::auth::auth_layer(cfg.auth.token.clone()))
 }
 
 pub async fn healthz() -> impl IntoResponse {
