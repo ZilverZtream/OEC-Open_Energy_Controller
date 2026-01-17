@@ -82,12 +82,14 @@ impl AppState {
             crate::config::HardwareMode::Mock => HardwareMode::Mock,
         };
 
-        let factory = DeviceFactory::new(hardware_mode);
-        let battery = factory.create_battery(
-            caps.clone(),
-            cfg.battery.initial_soc_percent,
-            cfg.battery.ambient_temp_c,
-        );
+        let factory = DeviceFactory::with_config(hardware_mode, cfg.clone());
+        let battery = factory
+            .create_battery(
+                caps.clone(),
+                cfg.battery.initial_soc_percent,
+                cfg.battery.ambient_temp_c,
+            )
+            .await;
 
         let price = Box::new(ElprisetJustNuPriceForecaster::new(
             cfg.prices.base_url.clone(),
@@ -118,9 +120,14 @@ impl AppState {
             Box::new(SimpleProductionForecaster::default()),
         ));
 
-        let optimizer = Arc::new(BatteryOptimizer {
-            strategy: Box::new(DynamicProgrammingOptimizer),
-        });
+        // Use MILP optimizer if optimization feature is enabled, otherwise use DP
+        #[cfg(feature = "optimization")]
+        let strategy = Box::new(crate::optimizer::strategies::milp::MilpOptimizer::default());
+
+        #[cfg(not(feature = "optimization"))]
+        let strategy = Box::new(DynamicProgrammingOptimizer);
+
+        let optimizer = Arc::new(BatteryOptimizer { strategy });
         let schedule = Arc::new(RwLock::new(None::<Schedule>));
 
         // Initialize constraints with actual battery capabilities
@@ -172,6 +179,7 @@ impl AppState {
         // CRITICAL FIX: Initialize V2X Controller if EV charger is available
         // This enables vehicle-to-grid/home functionality
         let ev_charger = factory.create_ev_charger();
+        let ev_charger_clone = Arc::clone(&ev_charger);
         let v2x_controller = if ev_charger.v2x_capabilities().is_some() {
             let v2x_config = v2x_controller::V2XConfig::default();
             Some(Arc::new(v2x_controller::V2XController::new(
@@ -199,6 +207,7 @@ impl AppState {
             repos: Arc::clone(&repos),
             last_sensor_read: Arc::new(RwLock::new(Utc::now())),
             v2x: v2x_controller,
+            ev_charger: ev_charger_clone,
         });
 
         // CRITICAL FIX: Initialize Safety Monitor
@@ -278,10 +287,13 @@ pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
 
             // Get current battery state for safety checks
             if let Ok(battery_state) = controller_for_safety.get_current_state().await {
+                // Get real grid status from controller
+                let grid_status = controller_for_safety.get_grid_status().await.unwrap_or_default();
+
                 let measurements = safety_monitor::SafetyMeasurements {
-                    grid_import_kw: 0.0, // TODO: Get from actual grid sensor
-                    grid_voltage_v: 230.0, // TODO: Get from actual grid sensor
-                    grid_frequency_hz: 50.0, // TODO: Get from actual grid sensor
+                    grid_import_kw: grid_status.import_power_w / 1000.0, // Convert W to kW
+                    grid_voltage_v: grid_status.voltage_v,
+                    grid_frequency_hz: grid_status.frequency_hz,
                     battery_soc_percent: battery_state.soc_percent,
                     battery_temperature_c: battery_state.temperature_c,
                     grid_nominal_voltage_v: 230.0,
@@ -319,6 +331,8 @@ pub struct BatteryController {
     last_sensor_read: Arc<RwLock<DateTime<Utc>>>,
     // V2X controller for vehicle-to-grid/home coordination
     v2x: Option<Arc<v2x_controller::V2XController>>,
+    // EV charger for direct actuation
+    ev_charger: Arc<dyn crate::domain::EvCharger>,
 }
 
 impl BatteryController {
@@ -433,9 +447,13 @@ impl BatteryController {
                 }
             }
 
-            // Build PowerFlowInputs from current state using configured sensor fallback values
-            let pv_production_kw = self.config.hardware.sensor_fallback.default_pv_production_kw;
-            let house_load_kw = self.config.hardware.sensor_fallback.default_house_load_kw;
+            // Build PowerFlowInputs from current state
+            // TODO: Integrate real sensors when available:
+            // - PV production: Read from inverter or PV sensor via Modbus/OCPP
+            // - House load: Calculate from grid meter (grid_import + battery_power - pv_production)
+            // For now, use sensor fallback values as conservative estimates
+            let pv_production_kw = self.get_pv_production_kw().await;
+            let house_load_kw = self.get_house_load_kw().await;
 
             // Get grid price from current schedule or use fallback
             let grid_price_sek_kwh = self
@@ -481,11 +499,19 @@ impl BatteryController {
             let model = PowerFlowModel::new((*self.power_flow_constraints).clone());
 
             // Compute power flows with safety checks
-            let target_power_w = match model.compute_flows(&inputs) {
+            let (target_power_w, ev_current_a) = match model.compute_flows(&inputs) {
                 Ok(snapshot) => {
                     // Use the battery power from PowerFlowModel
                     // Convert kW to W
                     let battery_target_w = snapshot.battery_kw * 1000.0;
+
+                    // CRITICAL FIX: Extract EV charging current from PowerFlowModel
+                    // Convert kW to current: I = P / V (assuming 230V single-phase)
+                    let ev_current_a = if snapshot.ev_kw > 0.0 {
+                        snapshot.ev_kw * 1000.0 / 230.0 // kW -> A
+                    } else {
+                        0.0
+                    };
 
                     // Log the power flow decision
                     info!(
@@ -496,31 +522,52 @@ impl BatteryController {
                         pv_kw = snapshot.pv_kw,
                         house_kw = snapshot.house_kw,
                         grid_kw = snapshot.grid_kw,
+                        ev_kw = snapshot.ev_kw,
+                        ev_current_a = ev_current_a,
                         "PowerFlowModel decision"
                     );
 
-                    battery_target_w
+                    (battery_target_w, ev_current_a)
                 }
                 Err(e) => {
                     // If PowerFlowModel fails due to constraint violations,
-                    // the safest fallback is to idle the battery
+                    // the safest fallback is to idle the battery and stop EV charging
                     warn!(error=%e, "PowerFlowModel failed, entering safe fallback mode (Idle)");
-                    0.0
+                    (0.0, 0.0)
                 }
             };
 
-            // Use simple P control to smooth the transition
+            // CRITICAL FIX: Remove P-controller from setpoint commands
+            // Inverters are setpoint-based (digital), not inertial (physical).
+            // P-control causes overshoot and oscillation. Use direct setpoint.
             let caps = self.battery.capabilities();
             let max_charge_w = caps.max_charge_kw * 1000.0;
             let max_discharge_w = caps.max_discharge_kw * 1000.0;
-            let control = simple_p_control(state.power_w, target_power_w, max_charge_w, max_discharge_w);
+            let commanded_power_w = target_power_w.clamp(-max_discharge_w, max_charge_w);
 
-            self.battery.set_power(control).await?;
+            // CRITICAL FIX: Actuate EV charger to prevent fuse overload
+            // The PowerFlowModel calculated the safe EV charging current.
+            // We MUST apply it, or the main fuse will blow during high house load.
+            if let Err(e) = self.ev_charger.set_current(ev_current_a).await {
+                error!(
+                    error = %e,
+                    commanded_current_a = ev_current_a,
+                    "Failed to set EV charger current"
+                );
+            } else {
+                debug!(
+                    ev_current_a = ev_current_a,
+                    "EV charger current updated"
+                );
+            }
+
+            self.battery.set_power(commanded_power_w).await?;
             info!(
                 soc_percent = state.soc_percent,
                 power_w = state.power_w,
                 target_power_w = target_power_w,
-                control_w = control,
+                commanded_power_w = commanded_power_w,
+                ev_current_a = ev_current_a,
                 "control tick"
             );
         }
@@ -725,6 +772,35 @@ impl BatteryController {
     pub async fn get_constraints(&self) -> Constraints {
         self.constraints.read().await.clone()
     }
+    /// Get current PV production (kW)
+    ///
+    /// TODO: Read from actual PV inverter or sensor when available
+    /// For now, returns fallback value from configuration
+    async fn get_pv_production_kw(&self) -> f64 {
+        // Future implementation: Read from inverter via Modbus
+        // if let Some(inverter) = &self.inverter {
+        //     if let Ok(state) = inverter.read_state().await {
+        //         return state.pv_power_w / 1000.0;
+        //     }
+        // }
+        self.config.hardware.sensor_fallback.default_pv_production_kw
+    }
+
+    /// Get current house load (kW)
+    ///
+    /// TODO: Calculate from grid meter or read from dedicated sensor
+    /// For now, returns fallback value from configuration
+    async fn get_house_load_kw(&self) -> f64 {
+        // Future implementation: Calculate from energy balance
+        // house_load = grid_import + battery_discharge + pv_production - grid_export
+        // if let Ok(grid) = self.get_grid_status().await {
+        //     let battery_state = self.battery.read_state().await.ok()?;
+        //     let pv_kw = self.get_pv_production_kw().await;
+        //     return (grid.import_power_w / 1000.0) + (battery_state.power_w / 1000.0) + pv_kw;
+        // }
+        self.config.hardware.sensor_fallback.default_house_load_kw
+    }
+
     async fn record_state(&self, timestamp: DateTime<Utc>, state: BatteryState) {
         // Update in-memory history
         {
