@@ -12,17 +12,13 @@ pub struct AuthConfig {
     pub token: String,
 }
 
-pub fn auth_layer(
-    token: String,
-) -> axum::middleware::FromFnLayer<
-    impl Fn(Request<Body>, Next) -> futures::future::BoxFuture<'static, Result<Response, StatusCode>>
-        + Clone,
-    Body,
-    Response,
-> {
-    axum::middleware::from_fn(move |req: Request<Body>, next: Next| {
+/// Create an authentication middleware layer
+///
+/// This returns a middleware layer that checks for Bearer token authentication
+pub fn auth_layer(token: String) -> impl Clone {
+    middleware::from_fn::<_, Response>(move |req: Request<Body>, next: Next| {
         let token = token.clone();
-        Box::pin(async move {
+        async move {
             let auth_header = req
                 .headers()
                 .get(axum::http::header::AUTHORIZATION)
@@ -32,14 +28,14 @@ pub fn auth_layer(
                 Some(auth) if auth.starts_with("Bearer ") => {
                     let provided_token = &auth[7..];
                     if provided_token == token {
-                        Ok(next.run(req).await)
+                        Ok::<_, StatusCode>(next.run(req).await)
                     } else {
                         Err(StatusCode::UNAUTHORIZED)
                     }
                 }
                 _ => Err(StatusCode::UNAUTHORIZED),
             }
-        })
+        }
     })
 }
 
