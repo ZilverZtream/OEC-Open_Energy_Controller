@@ -35,6 +35,30 @@ pub trait EvCharger: Send + Sync {
     async fn start_charging(&self) -> Result<()>;
     async fn stop_charging(&self) -> Result<()>;
     fn capabilities(&self) -> ChargerCapabilities;
+
+    // V2X (Vehicle-to-Grid/Home) capabilities
+
+    /// Get V2X capabilities if supported
+    fn v2x_capabilities(&self) -> Option<V2XCapabilities> {
+        None // Default: not supported
+    }
+
+    /// Start discharging from vehicle to grid/home
+    /// Returns error if V2X is not supported or conditions not met
+    async fn start_discharging(&self) -> Result<()> {
+        Err(ChargerError::V2GNotSupported.into())
+    }
+
+    /// Stop discharging
+    async fn stop_discharging(&self) -> Result<()> {
+        Err(ChargerError::V2GNotSupported.into())
+    }
+
+    /// Set discharge power (in watts, positive value)
+    /// The charger will discharge at this rate from vehicle to grid
+    async fn set_discharge_power(&self, _watts: f64) -> Result<()> {
+        Err(ChargerError::V2GNotSupported.into())
+    }
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
@@ -48,6 +72,10 @@ pub struct ChargerState {
     pub energy_delivered_kwh: f64,
     pub session_duration_seconds: u64,
     pub vehicle_soc_percent: Option<f64>,
+    /// V2X: Is vehicle currently discharging to grid/home?
+    pub discharging: bool,
+    /// V2X: Energy discharged from vehicle (kWh)
+    pub energy_discharged_kwh: f64,
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
@@ -240,6 +268,34 @@ impl SimulatedEvCharger {
             energy_delivered_kwh: 0.0,
             session_duration_seconds: 0,
             vehicle_soc_percent: None,
+            discharging: false,
+            energy_discharged_kwh: 0.0,
+        };
+        Self::new(initial, caps)
+    }
+
+    /// Create a V2X-capable charger for testing
+    pub fn v2x_charger() -> Self {
+        let caps = ChargerCapabilities {
+            max_current_amps: 32.0,
+            min_current_amps: 6.0,
+            phases: 3,
+            voltage_v: 230.0,
+            connector_type: ConnectorType::CCS,
+            power_max_kw: 22.0,
+            supports_v2g: true,
+        };
+        let initial = ChargerState {
+            status: ChargerStatus::Available,
+            connected: false,
+            charging: false,
+            current_amps: 0.0,
+            power_w: 0.0,
+            energy_delivered_kwh: 0.0,
+            session_duration_seconds: 0,
+            vehicle_soc_percent: None,
+            discharging: false,
+            energy_discharged_kwh: 0.0,
         };
         Self::new(initial, caps)
     }
@@ -303,6 +359,90 @@ impl EvCharger for SimulatedEvCharger {
 
     fn capabilities(&self) -> ChargerCapabilities {
         self.caps.clone()
+    }
+
+    fn v2x_capabilities(&self) -> Option<V2XCapabilities> {
+        if self.caps.supports_v2g {
+            Some(V2XCapabilities {
+                bidirectional: true,
+                max_discharge_power_w: self.caps.power_max_kw * 1000.0,
+                min_discharge_power_w: 1000.0, // 1kW minimum
+                supports_iso15118: true,
+                supports_soc_reporting: true,
+                min_vehicle_soc_for_discharge: 20.0, // Keep 20% for driving
+            })
+        } else {
+            None
+        }
+    }
+
+    async fn start_discharging(&self) -> Result<()> {
+        if !self.caps.supports_v2g {
+            return Err(ChargerError::V2GNotSupported.into());
+        }
+
+        let mut st = self.state.write().await;
+
+        if !st.connected {
+            anyhow::bail!("Cannot start discharging: no vehicle connected");
+        }
+
+        if st.status == ChargerStatus::Faulted {
+            anyhow::bail!("Cannot start discharging: charger is faulted");
+        }
+
+        // Check minimum SoC for discharge
+        if let Some(soc) = st.vehicle_soc_percent {
+            if soc < 20.0 {
+                anyhow::bail!("Cannot discharge: vehicle SoC too low ({}%)", soc);
+            }
+        }
+
+        st.discharging = true;
+        st.charging = false;
+        st.status = ChargerStatus::Charging; // Reuse charging status for V2X
+
+        Ok(())
+    }
+
+    async fn stop_discharging(&self) -> Result<()> {
+        let mut st = self.state.write().await;
+
+        st.discharging = false;
+        st.current_amps = 0.0;
+        st.power_w = 0.0;
+
+        if st.connected {
+            st.status = ChargerStatus::SuspendedEVSE;
+        } else {
+            st.status = ChargerStatus::Available;
+        }
+
+        Ok(())
+    }
+
+    async fn set_discharge_power(&self, watts: f64) -> Result<()> {
+        if !self.caps.supports_v2g {
+            return Err(ChargerError::V2GNotSupported.into());
+        }
+
+        let mut st = self.state.write().await;
+
+        if !st.discharging {
+            anyhow::bail!("Not in discharging mode");
+        }
+
+        // Clamp to capabilities
+        let max_discharge = self.caps.power_max_kw * 1000.0;
+        let clamped = watts.clamp(0.0, max_discharge);
+
+        // Negative power indicates discharge
+        st.power_w = -clamped;
+
+        // Calculate current (3-phase)
+        st.current_amps = clamped / (self.caps.voltage_v * self.caps.phases as f64);
+
+        Ok(())
     }
 }
 
