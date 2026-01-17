@@ -12,10 +12,17 @@ pub struct AuthConfig {
     pub token: String,
 }
 
-pub fn auth_layer(token: String) -> impl Clone {
-    middleware::from_fn(move |req: Request<Body>, next: Next| {
+pub fn auth_layer(
+    token: String,
+) -> axum::middleware::FromFnLayer<
+    impl Fn(Request<Body>, Next) -> futures::future::BoxFuture<'static, Result<Response, StatusCode>>
+        + Clone,
+    Body,
+    Response,
+> {
+    axum::middleware::from_fn(move |req: Request<Body>, next: Next| {
         let token = token.clone();
-        async move {
+        Box::pin(async move {
             let auth_header = req
                 .headers()
                 .get(axum::http::header::AUTHORIZATION)
@@ -32,7 +39,7 @@ pub fn auth_layer(token: String) -> impl Clone {
                 }
                 _ => Err(StatusCode::UNAUTHORIZED),
             }
-        }
+        })
     })
 }
 
