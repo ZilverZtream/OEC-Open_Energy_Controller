@@ -3,6 +3,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 use tokio::sync::RwLock;
 
@@ -96,6 +97,9 @@ pub struct InverterCapabilities {
 pub struct SimulatedInverter {
     state: Arc<RwLock<InverterState>>,
     caps: InverterCapabilities,
+    /// CRITICAL SAFETY FIX: Lock-free emergency shutdown flag
+    /// Atomic flag to prevent deadlock if main loop hangs while holding state lock
+    emergency_stop: Arc<AtomicBool>,
 }
 
 impl SimulatedInverter {
@@ -103,6 +107,7 @@ impl SimulatedInverter {
         Self {
             state: Arc::new(RwLock::new(initial)),
             caps,
+            emergency_stop: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -179,6 +184,11 @@ impl Inverter for SimulatedInverter {
     }
 
     async fn set_mode(&self, mode: InverterMode) -> Result<()> {
+        // CRITICAL SAFETY CHECK: Abort if emergency stop is active
+        if self.emergency_stop.load(Ordering::SeqCst) {
+            anyhow::bail!("Inverter emergency stop is active - cannot change mode");
+        }
+
         let mut st = self.state.write().await;
 
         // Validate mode transition
@@ -197,6 +207,11 @@ impl Inverter for SimulatedInverter {
     }
 
     async fn set_export_limit(&self, watts: f64) -> Result<()> {
+        // CRITICAL SAFETY CHECK: Abort if emergency stop is active
+        if self.emergency_stop.load(Ordering::SeqCst) {
+            anyhow::bail!("Inverter emergency stop is active - cannot set export limit");
+        }
+
         if !self.caps.supports_export_limit {
             anyhow::bail!("Inverter does not support export limiting");
         }
@@ -218,11 +233,26 @@ impl Inverter for SimulatedInverter {
     }
 
     async fn emergency_shutdown(&self) -> Result<()> {
-        // Immediately stop all inverter operations
-        let mut state = self.state.write().await;
-        state.status = InverterStatus::Shutdown;
-        state.ac_output_power_w = 0.0;
-        state.mode = InverterMode::Standby;
+        // CRITICAL SAFETY FIX: Lock-free emergency shutdown using atomic flag
+        // This prevents deadlock if the main loop hangs while holding the state lock
+
+        // Set atomic flag first (this never blocks)
+        self.emergency_stop.store(true, Ordering::SeqCst);
+
+        // Try to acquire lock with try_write (non-blocking)
+        // If we can't get the lock immediately, the atomic flag will still protect us
+        match self.state.try_write() {
+            Ok(mut state) => {
+                state.status = InverterStatus::Shutdown;
+                state.ac_output_power_w = 0.0;
+                state.mode = InverterMode::Standby;
+            }
+            Err(_) => {
+                // Lock is held - this means main loop might be hung
+                // The atomic flag ensures set_mode/set_export_limit will see emergency stop
+                tracing::warn!("Emergency shutdown: could not acquire state lock immediately, relying on atomic flag");
+            }
+        }
         Ok(())
     }
 }

@@ -193,8 +193,21 @@ impl GridSimulator {
 
     /// Check if fuse should trip based on current
     fn check_fuse_trip(&mut self, import_kw: f64) -> bool {
+        // CRITICAL PHYSICS FIX: Use actual voltage, not nominal
+        // During brownout (undervoltage), lower voltage = higher current for same power
+        // Real loads are Constant Power: if voltage drops from 230V to 200V,
+        // current increases (I=P/V), which can trip the fuse even at normal power levels
+
+        // Use actual voltage from current state (accounts for brownout/overvoltage)
+        let voltage_v = if self.current_state.voltage_v > 1.0 {
+            self.current_state.voltage_v
+        } else {
+            // If voltage is near zero (grid outage), use nominal to avoid division issues
+            self.config.nominal_voltage_v
+        };
+
         // Calculate current: I = P / V
-        let current_a = import_kw * 1000.0 / self.config.nominal_voltage_v;
+        let current_a = import_kw * 1000.0 / voltage_v;
 
         // Fuse trips if current exceeds rating
         // Add small random variation (±2%) to simulate thermal characteristics

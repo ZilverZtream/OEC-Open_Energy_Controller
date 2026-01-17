@@ -353,6 +353,7 @@ pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
                     battery_soc_percent: battery_state.soc_percent,
                     battery_temperature_c: battery_state.temperature_c,
                     grid_nominal_voltage_v: 230.0,
+                    timestamp: chrono::Utc::now(),
                 };
 
                 let violations = safety_monitor.check_safety(&measurements).await;

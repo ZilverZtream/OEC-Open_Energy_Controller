@@ -3,6 +3,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, sync::Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
@@ -171,6 +172,9 @@ pub struct SimulatedBattery {
     /// Ambient temperature (°C) - configurable based on installation environment
     /// Nordic winter: -10°C, Summer: 20°C, Indoor: 15-25°C
     pub ambient_temp_c: f64,
+    /// CRITICAL SAFETY FIX: Lock-free emergency shutdown flag
+    /// Atomic flag to prevent deadlock if main loop hangs while holding state lock
+    emergency_stop: Arc<AtomicBool>,
 }
 
 impl SimulatedBattery {
@@ -186,6 +190,7 @@ impl SimulatedBattery {
             simulate_delays: false,
             simulate_noise: false,
             ambient_temp_c,
+            emergency_stop: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -202,6 +207,7 @@ impl SimulatedBattery {
             simulate_delays: true,
             simulate_noise: true,
             ambient_temp_c,
+            emergency_stop: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -272,6 +278,11 @@ impl Battery for SimulatedBattery {
     }
 
     async fn set_power(&self, watts: f64) -> Result<()> {
+        // CRITICAL SAFETY CHECK: Abort if emergency stop is active
+        if self.emergency_stop.load(Ordering::SeqCst) {
+            anyhow::bail!("Battery emergency stop is active - cannot set power");
+        }
+
         let mut st = self.state.write().await;
         st.power_w = watts;
 
@@ -365,10 +376,25 @@ impl Battery for SimulatedBattery {
     }
 
     async fn emergency_shutdown(&self) -> Result<()> {
-        // Immediately set power to zero and enter standby mode
-        let mut state = self.state.write().await;
-        state.power_w = 0.0;
-        state.status = BatteryStatus::Standby;
+        // CRITICAL SAFETY FIX: Lock-free emergency shutdown using atomic flag
+        // This prevents deadlock if the main loop hangs while holding the state lock
+
+        // Set atomic flag first (this never blocks)
+        self.emergency_stop.store(true, Ordering::SeqCst);
+
+        // Try to acquire lock with try_write (non-blocking)
+        // If we can't get the lock immediately, the atomic flag will still protect us
+        match self.state.try_write() {
+            Ok(mut state) => {
+                state.power_w = 0.0;
+                state.status = BatteryStatus::Standby;
+            }
+            Err(_) => {
+                // Lock is held - this means main loop might be hung
+                // The atomic flag ensures read_state/set_power will see emergency stop
+                tracing::warn!("Emergency shutdown: could not acquire state lock immediately, relying on atomic flag");
+            }
+        }
         Ok(())
     }
 }

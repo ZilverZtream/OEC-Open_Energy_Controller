@@ -190,9 +190,25 @@ impl BatteryThermalSimulator {
             0.0
         };
 
-        // Heat generation from I²R losses
-        // Note: This is simplified - real batteries have complex heat generation
-        let heat_gen_w = current_a.powi(2) * self.config.internal_resistance_ohm;
+        // CRITICAL PHYSICS FIX: Include both resistive AND entropic heat generation
+        // Previous code only modeled I²R (ohmic) heating
+        // Real batteries, especially cold ones, generate massive heat from chemical inefficiency
+
+        // 1. Resistive (I²R) heat from internal resistance
+        let resistive_heat_w = current_a.powi(2) * self.config.internal_resistance_ohm;
+
+        // 2. Entropic heat from chemical inefficiency (P × (1 - η))
+        //    This is the "missing" heat that was being ignored
+        //    At -10°C with 60% efficiency, a 5kW charge generates:
+        //      - I²R:      ~156W (negligible)
+        //      - Entropic: 2000W (massive!)
+        //    This self-heating effect is critical for cold-weather operation
+        let temp_c = self.state.temperature_c;
+        let efficiency_factor = Self::calculate_efficiency_factor(temp_c);
+        let entropic_heat_w = power_w.abs() * (1.0 - efficiency_factor);
+
+        // Total heat generation
+        let heat_gen_w = resistive_heat_w + entropic_heat_w;
 
         // Heat dissipation: Q_loss = h * (T - T_ambient)
         // Simplified model: no explicit area, absorbed into h coefficient
