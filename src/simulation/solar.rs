@@ -184,6 +184,9 @@ pub struct SolarSimulatorConfig {
     pub enable_clouds: bool,
     /// Random seed for reproducibility (None = random)
     pub random_seed: Option<u64>,
+    /// Inverter standby power consumption in kW (default: 0.05 kW = 50W)
+    /// Real inverters consume ~20-100W to stay on and operate electronics
+    pub inverter_standby_kw: f64,
 }
 
 impl Default for SolarSimulatorConfig {
@@ -197,6 +200,7 @@ impl Default for SolarSimulatorConfig {
             timezone_offset: 1, // CET (UTC+1)
             enable_clouds: true,
             random_seed: None,
+            inverter_standby_kw: 0.05, // 50W typical inverter standby consumption
         }
     }
 }
@@ -300,7 +304,26 @@ impl SolarSimulator {
 
         // Apply cloud factor
         let cloud_factor = self.current_state.cloud_cover.transmission_factor();
-        let production_kw = (clear_sky_kw * cloud_factor).max(0.0);
+        let gross_production_kw = (clear_sky_kw * cloud_factor).max(0.0);
+
+        // CRITICAL FIX #7: Solar inverter "efficiency cliff"
+        // Real inverters consume power (~20-100W) to stay on and operate electronics
+        // At low light (early morning), gross production might be +10W but net is -50W
+        // The inverter self-consumption must be subtracted to match reality
+        //
+        // Physics:
+        // - If sun is below horizon (nighttime), inverter is typically off: net = 0
+        // - If sun is up but production < standby, inverter runs at loss: net = production - standby (negative!)
+        // - If production > standby, normal operation: net = production - standby
+        let production_kw = if elevation_deg <= 0.0 {
+            // Nighttime: inverter is off, no consumption
+            0.0
+        } else {
+            // Daytime: inverter is on and consuming standby power
+            // Net production = gross production - inverter standby
+            // This can be NEGATIVE at dawn/dusk when production < standby
+            gross_production_kw - self.config.inverter_standby_kw
+        };
 
         self.current_state = SolarState {
             production_kw,

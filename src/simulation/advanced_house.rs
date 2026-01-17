@@ -167,7 +167,9 @@ impl AdvancedHouseSimulator {
     /// // house.tick(time, outdoor_temp, pv_inverter_output_w, base_load);  // BUG!
     /// ```
     pub fn tick(&mut self, new_time: NaiveDateTime, outdoor_temp_c: f64, solar_irradiance_gain_w: f64, base_load_kw: f64) {
-        let dt_seconds = (new_time - self.state.timestamp).num_seconds() as f64;
+        // CRITICAL FIX: Use num_milliseconds() instead of num_seconds() to avoid truncation
+        // num_seconds() truncates milliseconds, causing simulation freeze at high control loop frequencies (e.g., 10Hz)
+        let dt_seconds = (new_time - self.state.timestamp).num_milliseconds() as f64 / 1000.0;
         if dt_seconds <= 0.0 {
             return;
         }

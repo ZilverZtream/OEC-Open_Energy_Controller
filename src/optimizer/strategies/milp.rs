@@ -133,7 +133,7 @@ impl MilpOptimizer {
         };
 
         // Build the optimization problem
-        // Objective: Minimize energy cost + peak power penalty (Effekttariff)
+        // Objective: Minimize energy cost + peak power penalty (Effekttariff) + battery wear cost
         let energy_cost = (0..n_periods).map(|t| {
             prices[t] * durations[t] * (charge[t] - discharge[t])
         }).sum::<Expression>();
@@ -144,7 +144,21 @@ impl MilpOptimizer {
         // We amortize the monthly charge over the 24h optimization period
         let peak_power_penalty = peak_power * constraints.peak_power_tariff_sek_per_kw;
 
-        let objective = energy_cost + peak_power_penalty;
+        // CRITICAL FIX #3: Battery degradation cost
+        // Real LiFePO4 batteries cost ~0.50 - 1.00 SEK per cycled kWh in wear
+        // Without this, optimizer will cycle battery to save 0.01 SEK, destroying a 50,000 SEK battery
+        // Wear cost = (charge + discharge) * degradation_per_cycle * replacement_cost / capacity
+        let wear_cost_per_kwh = (constraints.battery_degradation_per_cycle
+                                * constraints.battery_replacement_cost_sek)
+                               / constraints.battery_capacity_kwh;
+
+        let battery_wear_cost = (0..n_periods).map(|t| {
+            // Both charging and discharging cause wear (one full cycle = charge + discharge)
+            // Multiply by duration to convert power (kW) to energy (kWh)
+            wear_cost_per_kwh * durations[t] * (charge[t] + discharge[t])
+        }).sum::<Expression>();
+
+        let objective = energy_cost + peak_power_penalty + battery_wear_cost;
 
         let mut problem_builder = problem.minimise(objective).using(default_solver);
 

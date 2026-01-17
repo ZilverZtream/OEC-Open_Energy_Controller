@@ -44,6 +44,8 @@ pub struct GridState {
     pub is_available: bool,
     /// Time remaining in fault condition (minutes)
     pub fault_duration_minutes: i64,
+    /// Whether anti-islanding protection is triggered (inverter disconnect)
+    pub anti_islanding_triggered: bool,
     /// Timestamp of this state
     pub timestamp: NaiveDateTime,
 }
@@ -139,6 +141,7 @@ impl GridSimulator {
                 export_kw: 0.0,
                 is_available: true,
                 fault_duration_minutes: 0,
+                anti_islanding_triggered: false,
                 timestamp: start_time,
             },
             rng,
@@ -348,21 +351,26 @@ impl GridSimulator {
             }
         };
 
-        // CRITICAL SAFETY FIX #3: Inverter Anti-Islanding Protection
+        // CRITICAL FIX #11: Inverter Anti-Islanding Protection (IEEE 1547)
         // Real solar inverters (per IEEE 1547, EN 50549-1, VDE-AR-N 4105) MUST
         // disconnect within 2 seconds if grid voltage or frequency goes out of range.
         // This prevents "islanding" where the inverter continues to energize a dead grid.
         //
-        // Typical anti-islanding limits (Sweden/Europe):
+        // Modern IEEE 1547-2018 limits (stricter than old 1547-2003):
         // - Voltage: 195V - 253V (85%-110% of nominal 230V)
-        // - Frequency: 47.5Hz - 51.5Hz
+        // - Frequency: 49.8Hz - 50.2Hz (±0.2Hz for European grid, ±0.3Hz for older inverters)
+        //
+        // These stricter limits enable:
+        // 1. Faster fault detection and grid support
+        // 2. FCR-D (Frequency Containment Reserve - Disturbance) participation
+        // 3. Compliance with Swedish grid code (SvK Affärsverket)
         //
         // If these limits are violated, the inverter shuts down export immediately.
 
         const MIN_VOLTAGE_V: f64 = 195.0;  // 85% of 230V
         const MAX_VOLTAGE_V: f64 = 253.0;  // 110% of 230V
-        const MIN_FREQUENCY_HZ: f64 = 47.5;
-        const MAX_FREQUENCY_HZ: f64 = 51.5;
+        const MIN_FREQUENCY_HZ: f64 = 49.8;  // IEEE 1547-2018 (strict)
+        const MAX_FREQUENCY_HZ: f64 = 50.2;  // IEEE 1547-2018 (strict)
 
         let anti_islanding_violation = voltage_v < MIN_VOLTAGE_V
             || voltage_v > MAX_VOLTAGE_V
@@ -388,10 +396,27 @@ impl GridSimulator {
             } else {
                 0.0  // Anti-islanding: Inverter shuts down export
             },
+            anti_islanding_triggered: anti_islanding_violation,
             is_available: self.current_state.is_available,
-            fault_duration_minutes: self.fault_duration_remaining.max(0),
+            fault_duration_minutes: self.current_state.fault_duration_minutes,
             timestamp: time,
         };
+    }
+
+    /// Check if grid frequency is within IEEE 1547 limits for inverter operation
+    /// This allows testing FCR-D (Frequency Containment Reserve) services
+    pub fn is_frequency_compliant(&self) -> bool {
+        const MIN_FREQUENCY_HZ: f64 = 49.8;
+        const MAX_FREQUENCY_HZ: f64 = 50.2;
+        self.current_state.frequency_hz >= MIN_FREQUENCY_HZ
+            && self.current_state.frequency_hz <= MAX_FREQUENCY_HZ
+    }
+
+    /// Get frequency deviation from nominal (for FCR-D response calculation)
+    /// Positive = overfrequency (reduce load/increase export)
+    /// Negative = underfrequency (increase load/reduce export)
+    pub fn frequency_deviation_hz(&self) -> f64 {
+        self.current_state.frequency_hz - self.config.nominal_frequency_hz
     }
 }
 

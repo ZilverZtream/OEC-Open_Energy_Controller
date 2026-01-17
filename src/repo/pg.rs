@@ -19,8 +19,14 @@ pub struct PgRepo {
 
 impl PgRepo {
     pub async fn connect(url: &str) -> Result<Self> {
+        // CRITICAL FIX #5: Database connection exhaustion on Raspberry Pi
+        // Raspberry Pi has limited resources. Postgres/SQLite have default connection limits.
+        // If we spawn 50 parallel simulation threads (for MPC optimization), we hit MaxConnections.
+        // Result: API returns 500 errors and controller stops recording data.
+        // Fix: Limit to 5 connections (suitable for Raspberry Pi), preventing exhaustion
         let pool = PgPoolOptions::new()
-            .max_connections(10)
+            .max_connections(5)
+            .min_connections(1)
             .connect(url)
             .await?;
         Ok(Self { pool })
