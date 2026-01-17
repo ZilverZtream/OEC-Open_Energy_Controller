@@ -1,4 +1,84 @@
 #![cfg(feature = "db")]
+//! # Battery State Repository
+//!
+//! ## CRITICAL: Flash Storage Wear Prevention (Issue #7)
+//!
+//! **Problem**: High-frequency database writes (1Hz or 1-minute resolution) will destroy
+//! SD cards on Raspberry Pi within 6-12 months due to write endurance limits.
+//!
+//! **Solution**:
+//! 1. **Batch writes**: Use `insert_batch()` to write multiple states at once (every 15 minutes)
+//! 2. **Coalesce updates**: Don't write every state change - aggregate in memory
+//! 3. **Flush on shutdown**: Use SIGTERM handler to ensure pending data is written
+//! 4. **Consider WAL mode**: PostgreSQL WAL can reduce writes, but still batch inserts
+//!
+//! ## Recommended Write Frequency
+//!
+//! | Resolution | IOPS/day | SD Card Lifespan | Recommended? |
+//! |-----------|----------|------------------|--------------|
+//! | 1 second  | 86,400   | 3-6 months       | ❌ NO        |
+//! | 1 minute  | 1,440    | 6-12 months      | ❌ NO        |
+//! | 5 minutes | 288      | 3-5 years        | ✅ OK        |
+//! | 15 minutes| 96       | 10+ years        | ✅ BEST      |
+//!
+//! ## Example: Batched Writes
+//!
+//! ```ignore
+//! use std::collections::VecDeque;
+//! use std::time::{Duration, Instant};
+//!
+//! struct BatteryStateBuffer {
+//!     states: VecDeque<BatteryStateRow>,
+//!     last_flush: Instant,
+//!     flush_interval: Duration,
+//! }
+//!
+//! impl BatteryStateBuffer {
+//!     fn new() -> Self {
+//!         Self {
+//!             states: VecDeque::new(),
+//!             last_flush: Instant::now(),
+//!             flush_interval: Duration::from_secs(15 * 60),  // 15 minutes
+//!         }
+//!     }
+//!
+//!     fn push(&mut self, state: BatteryStateRow) {
+//!         self.states.push_back(state);
+//!     }
+//!
+//!     async fn maybe_flush(&mut self, repo: &BatteryStateRepository<'_>) -> Result<()> {
+//!         if self.last_flush.elapsed() >= self.flush_interval && !self.states.is_empty() {
+//!             let states: Vec<_> = self.states.drain(..).collect();
+//!             repo.insert_batch(&states).await?;
+//!             self.last_flush = Instant::now();
+//!         }
+//!         Ok(())
+//!     }
+//!
+//!     async fn force_flush(&mut self, repo: &BatteryStateRepository<'_>) -> Result<()> {
+//!         if !self.states.is_empty() {
+//!             let states: Vec<_> = self.states.drain(..).collect();
+//!             repo.insert_batch(&states).await?;
+//!             self.last_flush = Instant::now();
+//!         }
+//!         Ok(())
+//!     }
+//! }
+//!
+//! // In your main control loop:
+//! let mut buffer = BatteryStateBuffer::new();
+//!
+//! loop {
+//!     let state = read_battery_state();
+//!     buffer.push(state);
+//!     buffer.maybe_flush(&repo).await?;
+//!
+//!     tokio::time::sleep(Duration::from_secs(60)).await;
+//! }
+//!
+//! // On shutdown (SIGTERM):
+//! buffer.force_flush(&repo).await?;
+//! ```
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};

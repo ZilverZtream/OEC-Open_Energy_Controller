@@ -3,6 +3,30 @@
 //! Models realistic driver behavior patterns using probabilistic models.
 //! Simulates vehicle connection/disconnection, driving patterns, and energy consumption.
 //!
+//! ## CRITICAL: V2G vs Unidirectional Charging (Issue #8)
+//!
+//! **99% of EV chargers are UNIDIRECTIONAL** (Wallbox, Zaptec, Easee, etc.):
+//! - Can ONLY charge (grid → vehicle)
+//! - CANNOT discharge (vehicle → grid or vehicle → home)
+//! - Hardware has diode bridges that prevent reverse power flow
+//!
+//! **V2G (Vehicle-to-Grid) / V2H (Vehicle-to-Home) requires special hardware**:
+//! - Bidirectional inverter/charger (expensive, rare)
+//! - CHAdeMO or CCS bidirectional protocol support
+//! - Special grid connection approval
+//!
+//! ## Simulation Reality Check
+//!
+//! This module models driver behavior (connection/disconnection, SoC, availability).
+//! It does NOT enforce charging direction - that's the optimizer's job!
+//!
+//! **The optimizer MUST check `constraints.v2g_enabled`**:
+//! - If `v2g_enabled = false`: Only allow positive power (charging)
+//! - If `v2g_enabled = true`: Allow negative power (discharging) ONLY if hardware supports it
+//!
+//! See `src/optimizer/constraints.rs` for the `v2g_enabled` flag.
+//! See MILP/DP optimizers for enforcement of unidirectional charging constraints.
+//!
 //! ## Behavior Model
 //!
 //! Uses a combination of:
@@ -13,7 +37,7 @@
 //!
 //! ## States
 //!
-//! - **ParkedHome**: Vehicle connected at home, available for V2H
+//! - **ParkedHome**: Vehicle connected at home, available for charging (and V2H if enabled)
 //! - **ParkedAway**: Vehicle at work/destination, unavailable
 //! - **Driving**: In transit, consuming energy
 //! - **Disconnected**: Manually disconnected (user override)

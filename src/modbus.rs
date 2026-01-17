@@ -105,6 +105,18 @@ pub mod client {
         }
 
         /// Reconnect to the device
+        ///
+        /// ## CRITICAL FIX #9: Exponential Backoff for Reconnection
+        ///
+        /// **WARNING**: Do NOT call this in a tight loop without delay!
+        ///
+        /// Problem: If the inverter (SolarEdge/Huawei) drops connection, calling
+        /// reconnect() instantly (0ms delay) will flood the inverter's weak network
+        /// stack, causing it to freeze and require a physical breaker reset.
+        ///
+        /// Solution: Use exponential backoff between reconnection attempts.
+        ///
+        /// See `reconnect_with_backoff()` for safe reconnection with retry logic.
         pub async fn reconnect(&self) -> Result<()> {
             warn!("Reconnecting to Modbus device at {}", self.addr);
             let socket_addr = self.addr.parse()?;
@@ -116,6 +128,54 @@ pub mod client {
             let mut ctx = self.context.lock().await;
             *ctx = new_ctx;
             Ok(())
+        }
+
+        /// Reconnect with exponential backoff (RECOMMENDED)
+        ///
+        /// Safely reconnects with exponential backoff to avoid flooding the inverter.
+        /// This is the SAFE way to handle connection loss in a monitoring loop.
+        ///
+        /// # Example
+        /// ```ignore
+        /// loop {
+        ///     match client.read_holding_registers(0, 10).await {
+        ///         Ok(data) => {
+        ///             // Process data
+        ///         }
+        ///         Err(e) => {
+        ///             error!("Modbus read failed: {}", e);
+        ///             // Safe reconnection with backoff
+        ///             if let Err(e) = client.reconnect_with_backoff(5).await {
+        ///                 error!("Failed to reconnect after retries: {}", e);
+        ///             }
+        ///         }
+        ///     }
+        ///     tokio::time::sleep(Duration::from_secs(1)).await;
+        /// }
+        /// ```
+        pub async fn reconnect_with_backoff(&self, max_retries: u32) -> Result<()> {
+            for attempt in 1..=max_retries {
+                match self.reconnect().await {
+                    Ok(()) => {
+                        info!("Successfully reconnected to {} on attempt {}", self.addr, attempt);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        if attempt == max_retries {
+                            error!("Failed to reconnect after {} attempts", max_retries);
+                            return Err(e);
+                        }
+                        // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                        let backoff_ms = 1000 * (1 << (attempt - 1)).min(16);
+                        warn!(
+                            "Reconnection attempt {} failed: {}. Retrying in {}ms...",
+                            attempt, e, backoff_ms
+                        );
+                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    }
+                }
+            }
+            unreachable!("Loop should always return within max_retries")
         }
 
         /// Execute an operation with retry logic

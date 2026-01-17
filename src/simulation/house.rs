@@ -1,7 +1,44 @@
-//! # House Load Simulation
+//! # House Load Simulation (Simple Model)
 //!
 //! Models household electricity consumption with realistic time-of-day patterns,
 //! random noise, and appliance events.
+//!
+//! ## IMPORTANT: Integration with AdvancedHouseSimulator
+//!
+//! This module provides **electrical load only** (kW consumption).
+//! It does NOT model:
+//! - Thermal dynamics (heating/cooling)
+//! - HVAC system interactions
+//! - Indoor temperature
+//! - Heat pump behavior
+//!
+//! For comprehensive house simulation including thermal physics and HVAC:
+//! - Use `AdvancedHouseSimulator` from `advanced_house.rs` instead
+//! - `AdvancedHouseSimulator` requires an `HvacSystem` (e.g., `GeothermalHeatPump`)
+//! - It models both electrical load AND thermal behavior
+//!
+//! Use this simple model when:
+//! - You only need electrical load forecasting
+//! - Thermal simulation is not required
+//! - You want minimal computational overhead
+//!
+//! ## Migration Guide
+//!
+//! If you're currently using `HouseSimulator` but need thermal/HVAC simulation:
+//! ```ignore
+//! // OLD: Simple electrical load only
+//! let house = HouseSimulator::new(config, start_time);
+//! let load_kw = house.load_kw();
+//!
+//! // NEW: Full thermal + HVAC + electrical simulation
+//! use crate::simulation::advanced_house::AdvancedHouseSimulator;
+//! use crate::simulation::hvac::{GeothermalHeatPump, GeothermalHeatPumpConfig};
+//!
+//! let hvac = Box::new(GeothermalHeatPump::new(GeothermalHeatPumpConfig::default()));
+//! let house = AdvancedHouseSimulator::new(advanced_config, start_time, 20.0, Some(hvac));
+//! let total_load_kw = house.total_load_kw();  // Includes HVAC + base load
+//! let indoor_temp = house.indoor_temp_c();    // Thermal state
+//! ```
 
 use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
 use rand::Rng;

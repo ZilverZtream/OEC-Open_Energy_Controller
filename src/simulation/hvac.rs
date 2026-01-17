@@ -175,6 +175,28 @@ pub struct GeothermalHeatPumpConfig {
     pub target_temp_c: f64,
     pub hysteresis_c: f64,
     pub nominal_voltage_v: f64,
+
+    /// CRITICAL FIX #11: Minimum Run Time (seconds)
+    ///
+    /// Heat pump compressors MUST NOT cycle rapidly. Minimum run time prevents:
+    /// 1. Mechanical wear on compressor start/stop cycles
+    /// 2. Efficiency loss from frequent transients
+    /// 3. Hardware destruction from rapid cycling
+    ///
+    /// Typical values:
+    /// - Geothermal: 300-600 seconds (5-10 minutes)
+    /// - Air source: 180-300 seconds (3-5 minutes)
+    ///
+    /// If simulation allows cycling every second (as indoor_temp fluctuates
+    /// around target_temp), the model validates control logic that would
+    /// mechanically destroy a real heat pump in days.
+    pub min_run_time_seconds: f64,
+
+    /// Minimum off time before compressor can restart (seconds)
+    ///
+    /// After shutdown, compressor must wait for pressure equalization.
+    /// Typical: 180-300 seconds (3-5 minutes)
+    pub min_off_time_seconds: f64,
 }
 
 impl Default for GeothermalHeatPumpConfig {
@@ -187,6 +209,10 @@ impl Default for GeothermalHeatPumpConfig {
             target_temp_c: 21.0,
             hysteresis_c: 1.0,
             nominal_voltage_v: 230.0,
+            // Enforce minimum 5 minute run time (300 seconds)
+            min_run_time_seconds: 300.0,
+            // Enforce minimum 3 minute off time (180 seconds)
+            min_off_time_seconds: 180.0,
         }
     }
 }
@@ -292,18 +318,35 @@ impl HvacSystem for GeothermalHeatPump {
             }
         };
 
-        // Detect mode change and trigger startup surge
-        if desired_mode != self.mode && desired_mode != HvacMode::Idle {
+        // CRITICAL FIX #11: Enforce minimum run time to prevent bang-bang cycling
+        // Don't allow mode changes if minimum run time hasn't been met
+        let can_change_mode = if self.mode == HvacMode::Idle {
+            // If idle, check minimum off time before starting
+            self.time_in_mode >= self.config.min_off_time_seconds
+        } else {
+            // If running (HeatingHouse or HeatingHotWater), check minimum run time before stopping
+            if desired_mode == HvacMode::Idle {
+                self.time_in_mode >= self.config.min_run_time_seconds
+            } else {
+                // Allow switching between HeatingHouse and HeatingHotWater
+                // (DHW priority can override house heating immediately)
+                true
+            }
+        };
+
+        // Detect mode change and trigger startup surge (only if minimum times are met)
+        if can_change_mode && desired_mode != self.mode && desired_mode != HvacMode::Idle {
             // Starting compressor - trigger LRA surge
             self.startup_surge_remaining = MOTOR_STARTUP_SURGE_DURATION;
             self.mode = desired_mode;
             self.time_in_mode = 0.0;
-        } else if desired_mode == HvacMode::Idle && self.mode != HvacMode::Idle {
-            // Shutting down
+        } else if can_change_mode && desired_mode == HvacMode::Idle && self.mode != HvacMode::Idle {
+            // Shutting down (only if minimum run time met)
             self.mode = HvacMode::Idle;
             self.time_in_mode = 0.0;
             self.startup_surge_remaining = 0.0;
         }
+        // else: maintain current mode until minimum time is met
 
         // Update startup surge timer
         if self.startup_surge_remaining > 0.0 {

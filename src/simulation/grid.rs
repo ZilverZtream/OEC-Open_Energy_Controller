@@ -348,6 +348,32 @@ impl GridSimulator {
             }
         };
 
+        // CRITICAL SAFETY FIX #3: Inverter Anti-Islanding Protection
+        // Real solar inverters (per IEEE 1547, EN 50549-1, VDE-AR-N 4105) MUST
+        // disconnect within 2 seconds if grid voltage or frequency goes out of range.
+        // This prevents "islanding" where the inverter continues to energize a dead grid.
+        //
+        // Typical anti-islanding limits (Sweden/Europe):
+        // - Voltage: 195V - 253V (85%-110% of nominal 230V)
+        // - Frequency: 47.5Hz - 51.5Hz
+        //
+        // If these limits are violated, the inverter shuts down export immediately.
+
+        const MIN_VOLTAGE_V: f64 = 195.0;  // 85% of 230V
+        const MAX_VOLTAGE_V: f64 = 253.0;  // 110% of 230V
+        const MIN_FREQUENCY_HZ: f64 = 47.5;
+        const MAX_FREQUENCY_HZ: f64 = 51.5;
+
+        let anti_islanding_violation = voltage_v < MIN_VOLTAGE_V
+            || voltage_v > MAX_VOLTAGE_V
+            || frequency_hz < MIN_FREQUENCY_HZ
+            || frequency_hz > MAX_FREQUENCY_HZ;
+
+        // Export is only allowed if:
+        // 1. Grid is available (no fault)
+        // 2. Anti-islanding protection not triggered
+        let can_export = self.current_state.is_available && !anti_islanding_violation;
+
         self.current_state = GridState {
             frequency_hz,
             voltage_v,
@@ -357,10 +383,10 @@ impl GridSimulator {
             } else {
                 0.0
             },
-            export_kw: if self.current_state.is_available {
+            export_kw: if can_export {
                 export_kw
             } else {
-                0.0
+                0.0  // Anti-islanding: Inverter shuts down export
             },
             is_available: self.current_state.is_available,
             fault_duration_minutes: self.fault_duration_remaining.max(0),
