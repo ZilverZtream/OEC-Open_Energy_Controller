@@ -67,6 +67,13 @@ pub struct GridSimulatorConfig {
     pub fault_probability_per_hour: f64,
     /// Random seed for reproducibility (None = random)
     pub random_seed: Option<u64>,
+
+    // SIMULATION IMPROVEMENT #2: Grid Impedance Model
+    /// Grid connection point (GCP) impedance in Ohms
+    /// Typical values: 0.1-0.5 Ω for strong grid, 0.5-2.0 Ω for weak grid
+    pub gcp_impedance_ohm: f64,
+    /// Enable voltage sag/rise simulation based on power flow
+    pub enable_voltage_impedance: bool,
 }
 
 impl Default for GridSimulatorConfig {
@@ -80,6 +87,26 @@ impl Default for GridSimulatorConfig {
             enable_faults: true,
             fault_probability_per_hour: 0.01, // 1% chance per hour (~90 hours MTBF)
             random_seed: None,
+            gcp_impedance_ohm: 0.3,     // Medium grid strength
+            enable_voltage_impedance: true,
+        }
+    }
+}
+
+impl GridSimulatorConfig {
+    /// Configuration for strong grid (urban area, close to substation)
+    pub fn strong_grid() -> Self {
+        Self {
+            gcp_impedance_ohm: 0.1,
+            ..Default::default()
+        }
+    }
+
+    /// Configuration for weak grid (rural area, far from substation)
+    pub fn weak_grid() -> Self {
+        Self {
+            gcp_impedance_ohm: 1.5,
+            ..Default::default()
         }
     }
 }
@@ -204,6 +231,40 @@ impl GridSimulator {
         }
     }
 
+    /// Calculate voltage at connection point including impedance effects
+    ///
+    /// V_measured = V_source - I * Z_line (for import)
+    /// V_measured = V_source + I * Z_line (for export)
+    ///
+    /// Where:
+    /// - V_source = grid source voltage
+    /// - I = current flow
+    /// - Z_line = grid connection point impedance
+    ///
+    /// This models voltage sag during import and voltage rise during export
+    fn calculate_voltage_with_impedance(
+        &self,
+        source_voltage_v: f64,
+        import_kw: f64,
+        export_kw: f64,
+    ) -> f64 {
+        // Net power flow (positive = import, negative = export)
+        let net_power_kw = import_kw - export_kw;
+
+        // Calculate current: I = P / V
+        let current_a = (net_power_kw * 1000.0) / source_voltage_v;
+
+        // Voltage drop: V_drop = I * Z
+        let voltage_drop_v = current_a * self.config.gcp_impedance_ohm;
+
+        // Voltage sag during import (positive current)
+        // Voltage rise during export (negative current)
+        let measured_voltage = source_voltage_v - voltage_drop_v;
+
+        // Clamp to realistic range
+        measured_voltage.clamp(180.0, 260.0)
+    }
+
     /// Trigger a random fault
     fn trigger_random_fault(&mut self) {
         let fault_type = self.rng.gen_range(0..100);
@@ -243,7 +304,14 @@ impl GridSimulator {
             GridFaultType::Normal => {
                 // Normal operation with small fluctuations
                 let freq = self.config.nominal_frequency_hz + self.generate_frequency_noise();
-                let volt = self.config.nominal_voltage_v + self.generate_voltage_noise();
+
+                // SIMULATION IMPROVEMENT #2: Voltage sag/rise from grid impedance
+                let base_voltage = self.config.nominal_voltage_v + self.generate_voltage_noise();
+                let volt = if self.config.enable_voltage_impedance {
+                    self.calculate_voltage_with_impedance(base_voltage, import_kw, export_kw)
+                } else {
+                    base_voltage
+                };
                 (freq, volt)
             }
             GridFaultType::UnderFrequency => {
