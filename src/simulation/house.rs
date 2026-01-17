@@ -86,13 +86,12 @@ impl Default for HouseSimulatorConfig {
     }
 }
 
-/// Simulates household electricity consumption
 pub struct HouseSimulator {
     config: HouseSimulatorConfig,
     current_state: HouseState,
     rng: rand::rngs::StdRng,
-    // Active appliances (power_kw, remaining_minutes)
-    active_appliances: Vec<(f64, i64)>,
+    active_appliances: Vec<(f64, f64)>,
+    accumulated_time_seconds: f64,
 }
 
 impl HouseSimulator {
@@ -119,9 +118,9 @@ impl HouseSimulator {
             },
             rng,
             active_appliances: Vec::new(),
+            accumulated_time_seconds: 0.0,
         };
 
-        // Initialize state for start time
         simulator.update_state(start_time);
         simulator
     }
@@ -182,33 +181,37 @@ impl HouseSimulator {
         multiplier.min(self.config.profile.peak_multiplier())
     }
 
-    /// Simulate appliance events (dishwasher, washing machine, etc.)
-    fn simulate_appliance_events(&mut self, time: NaiveDateTime) {
-        if !self.config.enable_appliance_events {
+    fn simulate_appliance_events(&mut self, dt_seconds: f64, time: NaiveDateTime) {
+        if !self.config.enable_appliance_events || dt_seconds <= 0.0 {
             return;
         }
 
-        // Update active appliances
-        self.active_appliances.retain_mut(|(_, remaining)| {
-            *remaining -= 1; // Assume tick is per minute for appliances
-            *remaining > 0
+        self.active_appliances.retain_mut(|(_, remaining_seconds)| {
+            *remaining_seconds -= dt_seconds;
+            *remaining_seconds > 0.0
         });
 
-        // Probability of new appliance starting (per minute)
-        // Higher during peak hours, scaled by household size
-        let hour = time.hour();
-        let base_probability = match hour {
-            7..=9 | 17..=21 => 0.005, // 0.5% per minute during peaks
-            10..=16 => 0.002,         // 0.2% during day
-            _ => 0.001,               // 0.1% at night
-        };
+        self.accumulated_time_seconds += dt_seconds;
+        let minute_steps = (self.accumulated_time_seconds / 60.0).floor() as i32;
 
-        let probability = base_probability * (self.config.household_size as f64 / 3.0);
+        if minute_steps > 0 {
+            self.accumulated_time_seconds -= minute_steps as f64 * 60.0;
 
-        if self.rng.gen_bool(probability) {
-            // Start a new appliance
-            let (power_kw, duration_minutes) = self.random_appliance();
-            self.active_appliances.push((power_kw, duration_minutes));
+            let hour = time.hour();
+            let base_probability = match hour {
+                7..=9 | 17..=21 => 0.005,
+                10..=16 => 0.002,
+                _ => 0.001,
+            };
+
+            let probability = base_probability * (self.config.household_size as f64 / 3.0);
+
+            for _ in 0..minute_steps {
+                if self.rng.gen_bool(probability) {
+                    let (power_kw, duration_minutes) = self.random_appliance();
+                    self.active_appliances.push((power_kw, duration_minutes as f64 * 60.0));
+                }
+            }
         }
     }
 
@@ -239,24 +242,15 @@ impl HouseSimulator {
         normal.sample(&mut self.rng)
     }
 
-    /// Update the house state for the given time
     fn update_state(&mut self, time: NaiveDateTime) {
-        // Calculate time-of-day multiplier
         let tod_multiplier = self.calculate_tod_multiplier(time);
 
-        // Simulate appliance events (assume 1-minute resolution)
-        let minutes_elapsed = (time - self.current_state.timestamp).num_minutes();
-        for _ in 0..minutes_elapsed {
-            self.simulate_appliance_events(time);
-        }
+        let dt_seconds = (time - self.current_state.timestamp).num_seconds() as f64;
+        self.simulate_appliance_events(dt_seconds, time);
 
-        // Calculate appliance load
         let appliance_load_kw = self.appliance_load_kw();
-
-        // Generate noise
         let noise_kw = self.generate_noise();
 
-        // Total load = (base * tod_multiplier) + appliances + noise
         let base_load_kw = self.config.profile.base_load_kw();
         let load_kw = (base_load_kw * tod_multiplier + appliance_load_kw + noise_kw).max(0.0);
 

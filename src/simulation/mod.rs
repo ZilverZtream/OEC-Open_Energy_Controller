@@ -34,20 +34,26 @@
 //! let grid_frequency = env.grid_frequency_hz();
 //! ```
 
+pub mod advanced_house;
 pub mod battery_thermal;
 pub mod environment;
 pub mod ev_driver;
 pub mod grid;
 pub mod house;
+pub mod hvac;
 pub mod solar;
+pub mod thermal;
 pub mod three_phase;
 
+pub use advanced_house::{AdvancedHouseConfig, AdvancedHouseSimulator, AdvancedHouseState};
 pub use battery_thermal::{BatteryThermalConfig, BatteryThermalSimulator, BatteryThermalState};
 pub use environment::{Environment, EnvironmentConfig, EnvironmentState};
 pub use ev_driver::{EVDriverConfig, EVDriverSimulator, EVDriverState, EVState};
 pub use grid::{GridSimulator, GridSimulatorConfig, GridState};
 pub use house::{HouseSimulator, HouseSimulatorConfig, HouseState, LoadProfile};
+pub use hvac::{AirHeatPump, AirHeatPumpConfig, GeothermalHeatPump, GeothermalHeatPumpConfig, HvacSystem, ThreePhaseLoad};
 pub use solar::{ClearSkyModel, CloudCover, SolarSimulator, SolarSimulatorConfig, SolarState};
+pub use thermal::{ThermalZone, ThermalZoneConfig, ThermalZoneState};
 pub use three_phase::{
     LoadDistribution, ThreePhaseCurrent, ThreePhaseGridState, ThreePhasePower,
     ThreePhaseSimulator, ThreePhaseVoltage,

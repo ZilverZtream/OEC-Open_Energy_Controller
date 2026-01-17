@@ -473,9 +473,6 @@ impl SafetyMonitor {
             state.total_violations += violations.len() as u64;
             state.last_violation = Some(violations[0].clone());
 
-            // CRITICAL FIX: Rate-limited logging to prevent log spam / SD card wear
-            // On persistent faults (e.g., undervoltage), this would write 3600 times/hour
-            // New: Only log state changes or once per minute
             const LOG_RATE_LIMIT_SECONDS: i64 = 60;
             let now = Utc::now();
             let mut last_warnings = self.last_warning_time.write().await;
@@ -496,19 +493,20 @@ impl SafetyMonitor {
             }
             drop(last_warnings);
 
-            // Trigger emergency stop if enabled
-            if self.config.enable_emergency_stop && !state.emergency_stop_active {
-                error!("TRIGGERING EMERGENCY STOP due to safety violation");
-                state.emergency_stop_active = true;
+            if self.config.enable_emergency_stop {
+                let was_already_stopped = state.emergency_stop_active;
 
-                // CRITICAL FIX: Direct hardware shutdown (bypasses message passing)
-                // This ensures shutdown even if control loop is hung
-                drop(state); // Release lock before calling hardware
+                if !was_already_stopped {
+                    error!("TRIGGERING EMERGENCY STOP due to safety violation");
+                    state.emergency_stop_active = true;
+                }
+
+                drop(state);
 
                 if let Some(battery) = &self.battery {
                     if let Err(e) = battery.emergency_shutdown().await {
                         error!("Failed to execute battery emergency shutdown: {}", e);
-                    } else {
+                    } else if !was_already_stopped {
                         info!("Battery emergency shutdown executed successfully");
                     }
                 }
@@ -516,15 +514,16 @@ impl SafetyMonitor {
                 if let Some(inverter) = &self.inverter {
                     if let Err(e) = inverter.emergency_shutdown().await {
                         error!("Failed to execute inverter emergency shutdown: {}", e);
-                    } else {
+                    } else if !was_already_stopped {
                         info!("Inverter emergency shutdown executed successfully");
                     }
                 }
 
-                // Broadcast emergency stop command (for non-hardware components)
-                let cmd = SafetyCommand::EmergencyStop(violations[0].clone());
-                if let Err(e) = self.command_tx.send(cmd) {
-                    error!("Failed to broadcast emergency stop command: {}", e);
+                if !was_already_stopped {
+                    let cmd = SafetyCommand::EmergencyStop(violations[0].clone());
+                    if let Err(e) = self.command_tx.send(cmd) {
+                        error!("Failed to broadcast emergency stop command: {}", e);
+                    }
                 }
             }
         }

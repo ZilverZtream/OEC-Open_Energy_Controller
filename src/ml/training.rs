@@ -340,38 +340,58 @@ pub mod consumption_trainer {
             end.format("%Y-%m-%d")
         );
 
-        // Fetch historical data
-        let data: Vec<ConsumptionPoint> = repo
-            .find_range(
-                household_id,
-                start.into(),
-                end.into(),
-            )
-            .await?;
+        const CHUNK_SIZE: usize = 10_000;
+        let mut all_data = Vec::with_capacity(config.max_samples.min(50_000));
+        let mut current_start = start;
+        let chunk_duration = Duration::days(7);
 
-        if data.is_empty() {
+        loop {
+            let chunk_end = (current_start + chunk_duration).min(end);
+
+            let chunk: Vec<ConsumptionPoint> = repo
+                .find_range(
+                    household_id,
+                    current_start.into(),
+                    chunk_end.into(),
+                )
+                .await?;
+
+            if chunk.is_empty() {
+                break;
+            }
+
+            let downsample_ratio = if all_data.len() + chunk.len() > config.max_samples {
+                ((all_data.len() + chunk.len()) as f64 / config.max_samples as f64).ceil() as usize
+            } else {
+                1
+            };
+
+            for (idx, point) in chunk.into_iter().enumerate() {
+                if idx % downsample_ratio == 0 {
+                    all_data.push(point);
+                    if all_data.len() >= config.max_samples {
+                        break;
+                    }
+                }
+            }
+
+            if all_data.len() >= config.max_samples || chunk_end >= end {
+                break;
+            }
+
+            current_start = chunk_end;
+        }
+
+        if all_data.is_empty() {
             anyhow::bail!("No historical data available for training");
         }
 
-        info!("Retrieved {} consumption data points", data.len());
+        info!(
+            "Retrieved {} consumption data points (chunked processing to prevent OOM)",
+            all_data.len()
+        );
 
-        // Downsample if necessary to prevent OOM
-        let data: Vec<ConsumptionPoint> = if data.len() > config.max_samples {
-            warn!(
-                "Downsampling from {} to {} samples to prevent OOM",
-                data.len(),
-                config.max_samples
-            );
-            let step = data.len() / config.max_samples;
-            data.into_iter()
-                .enumerate()
-                .filter(|(i, _)| i % step == 0)
-                .map(|(_, d)| d)
-                .take(config.max_samples)
-                .collect()
-        } else {
-            data
-        };
+        let data = all_data;
 
         // Extract features with pre-allocated vectors for better performance
         info!("Extracting features from {} samples", data.len());
