@@ -591,39 +591,29 @@ impl BatteryController {
             });
 
             // Get scheduled target power from optimizer
-            let schedule_target_w = self
-                .schedule
-                .read()
-                .await
-                .as_ref()
-                .and_then(|s| s.power_at(now_utc));
+            let schedule_snapshot = self.schedule.read().await.clone();
+            let schedule_target_w = schedule_snapshot.as_ref().and_then(|s| s.power_at(now_utc));
 
             // CRITICAL FIX: Evaluate V2X discharge decision and feed target into PowerFlowModel
             // EV commands are issued only after PowerFlowModel computes a safe snapshot
             let mut ev_target_w: Option<f64> = None;
             if let Some(ref v2x) = self.v2x {
                 // Get current price for V2X decision
-                let current_price = self
-                    .schedule
-                    .read()
-                    .await
+                let current_price = schedule_snapshot
                     .as_ref()
                     .and_then(|s| {
                         s.entries
                             .iter()
                             .find(|e| e.time_start <= now_utc && now_utc < e.time_end)
-                            .map(|_| 1.5) // TODO: Extract actual price from schedule
+                            .map(|e| e.price_sek_per_kwh)
                     })
                     .unwrap_or(1.5);
 
                 // Calculate average price for comparison
-                let avg_price = self
-                    .schedule
-                    .read()
-                    .await
+                let avg_price = schedule_snapshot
                     .as_ref()
                     .map(|s| {
-                        let sum: f64 = s.entries.iter().map(|_| 1.5).sum();
+                        let sum: f64 = s.entries.iter().map(|e| e.price_sek_per_kwh).sum();
                         sum / s.entries.len().max(1) as f64
                     })
                     .unwrap_or(1.5);
@@ -660,17 +650,13 @@ impl BatteryController {
             let house_load_kw = self.get_house_load_kw().await;
 
             // Get grid price from current schedule or use fallback
-            let grid_price_sek_kwh = self
-                .schedule
-                .read()
-                .await
+            let grid_price_sek_kwh = schedule_snapshot
                 .as_ref()
                 .and_then(|s| {
-                    // Find the current price from schedule entries
                     s.entries
                         .iter()
                         .find(|e| e.time_start <= now_utc && now_utc < e.time_end)
-                        .map(|_| 1.5)
+                        .map(|e| e.price_sek_per_kwh)
                 })
                 .unwrap_or(1.5);
 

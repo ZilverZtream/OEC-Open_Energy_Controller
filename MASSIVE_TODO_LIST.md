@@ -2039,7 +2039,7 @@
 - [ ] Read battery SoC and power
 - [ ] Read EV state (if connected)
 - [ ] Read grid import/export
-- [ ] Step 2: Fetch current prices
+- [x] Step 2: Fetch current prices
 - [ ] Step 3: Call `power_flow_model.compute_flows()`
 - [ ] Step 4: Issue commands based on snapshot
 - [ ] Command battery power

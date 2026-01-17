@@ -21,8 +21,8 @@ use uuid::Uuid;
 #[cfg(feature = "optimization")]
 use good_lp::*;
 
-use crate::optimizer::{Constraints, OptimizationStrategy, SystemState};
 use crate::domain::{Forecast24h, Schedule, ScheduleEntry};
+use crate::optimizer::{Constraints, OptimizationStrategy, SystemState};
 
 /// MILP Optimizer using linear programming for exact solutions
 pub struct MilpOptimizer {
@@ -112,7 +112,9 @@ impl MilpOptimizer {
         let peak_power = problem.add(variable().min(0.0));
 
         // Calculate time step durations (in hours)
-        let durations: Vec<f64> = forecast.prices.iter()
+        let durations: Vec<f64> = forecast
+            .prices
+            .iter()
             .map(|p| {
                 let duration = p.time_end.signed_duration_since(p.time_start);
                 duration.num_minutes() as f64 / 60.0
@@ -120,7 +122,9 @@ impl MilpOptimizer {
             .collect();
 
         // Extract prices
-        let prices: Vec<f64> = forecast.prices.iter()
+        let prices: Vec<f64> = forecast
+            .prices
+            .iter()
             .map(|p| p.price_sek_per_kwh)
             .collect();
 
@@ -134,9 +138,9 @@ impl MilpOptimizer {
 
         // Build the optimization problem
         // Objective: Minimize energy cost + peak power penalty (Effekttariff) + battery wear cost
-        let energy_cost = (0..n_periods).map(|t| {
-            prices[t] * durations[t] * (charge[t] - discharge[t])
-        }).sum::<Expression>();
+        let energy_cost = (0..n_periods)
+            .map(|t| prices[t] * durations[t] * (charge[t] - discharge[t]))
+            .sum::<Expression>();
 
         // Peak power tariff penalty (Swedish "Effekttariff")
         // This is charged monthly based on the maximum hourly average power
@@ -149,23 +153,23 @@ impl MilpOptimizer {
         // Without this, optimizer will cycle battery to save 0.01 SEK, destroying a 50,000 SEK battery
         // Wear cost = (charge + discharge) * degradation_per_cycle * replacement_cost / capacity
         let wear_cost_per_kwh = (constraints.battery_degradation_per_cycle
-                                * constraints.battery_replacement_cost_sek)
-                               / constraints.battery_capacity_kwh;
+            * constraints.battery_replacement_cost_sek)
+            / constraints.battery_capacity_kwh;
 
-        let battery_wear_cost = (0..n_periods).map(|t| {
-            // Both charging and discharging cause wear (one full cycle = charge + discharge)
-            // Multiply by duration to convert power (kW) to energy (kWh)
-            wear_cost_per_kwh * durations[t] * (charge[t] + discharge[t])
-        }).sum::<Expression>();
+        let battery_wear_cost = (0..n_periods)
+            .map(|t| {
+                // Both charging and discharging cause wear (one full cycle = charge + discharge)
+                // Multiply by duration to convert power (kW) to energy (kWh)
+                wear_cost_per_kwh * durations[t] * (charge[t] + discharge[t])
+            })
+            .sum::<Expression>();
 
         let objective = energy_cost + peak_power_penalty + battery_wear_cost;
 
         let mut problem_builder = problem.minimise(objective).using(default_solver);
 
         // Constraint: Initial SoC
-        problem_builder = problem_builder.with(constraint!(
-            soc[0] == state.battery.soc_percent
-        ));
+        problem_builder = problem_builder.with(constraint!(soc[0] == state.battery.soc_percent));
 
         // Constraints for each time period
         for t in 0..n_periods {
@@ -173,18 +177,17 @@ impl MilpOptimizer {
 
             // SoC dynamics: soc[t+1] = soc[t] + (charge[t] * eff - discharge[t] / eff) * dt / capacity * 100
             let soc_delta = (charge[t] * constraints.battery_efficiency
-                           - discharge[t] / constraints.battery_efficiency)
-                           * dt_h / constraints.battery_capacity_kwh * 100.0;
+                - discharge[t] / constraints.battery_efficiency)
+                * dt_h
+                / constraints.battery_capacity_kwh
+                * 100.0;
 
-            problem_builder = problem_builder.with(constraint!(
-                soc[t + 1] == soc[t] + soc_delta
-            ));
+            problem_builder = problem_builder.with(constraint!(soc[t + 1] == soc[t] + soc_delta));
 
             // Power limits
             // Battery charge rate limit
-            problem_builder = problem_builder.with(constraint!(
-                charge[t] <= constraints.battery_max_charge_kw
-            ));
+            problem_builder =
+                problem_builder.with(constraint!(charge[t] <= constraints.battery_max_charge_kw));
 
             // Battery discharge rate limit
             problem_builder = problem_builder.with(constraint!(
@@ -196,31 +199,26 @@ impl MilpOptimizer {
             // causing a 17kW total draw that blows the 11kW fuse.
             // The fuse limit is reduced by the house consumption to get max battery charge
             let max_charge_with_house = constraints.max_power_grid_kw - consumption[t];
-            problem_builder = problem_builder.with(constraint!(
-                charge[t] <= max_charge_with_house
-            ));
+            problem_builder = problem_builder.with(constraint!(charge[t] <= max_charge_with_house));
 
             // CRITICAL FIX #2: Peak power tracking for Effekttariff
             // peak_power must be >= total grid import at every time period
             // Total grid import = house consumption + battery charging (discharge reduces grid import)
             // This forces the optimizer to minimize the maximum grid power across all periods
             let total_grid_import = consumption[t] + charge[t];
-            problem_builder = problem_builder.with(constraint!(
-                peak_power >= total_grid_import
-            ));
+            problem_builder = problem_builder.with(constraint!(peak_power >= total_grid_import));
 
             // SoC bounds
-            problem_builder = problem_builder.with(constraint!(
-                soc[t + 1] >= constraints.min_soc_percent
-            ));
+            problem_builder =
+                problem_builder.with(constraint!(soc[t + 1] >= constraints.min_soc_percent));
 
-            problem_builder = problem_builder.with(constraint!(
-                soc[t + 1] <= constraints.max_soc_percent
-            ));
+            problem_builder =
+                problem_builder.with(constraint!(soc[t + 1] <= constraints.max_soc_percent));
         }
 
         // Solve the optimization problem
-        let solution = problem_builder.solve()
+        let solution = problem_builder
+            .solve()
             .context("MILP solver failed to find solution")?;
 
         // Extract power schedule (positive = charge, negative = discharge)
@@ -261,7 +259,8 @@ impl OptimizationStrategy for MilpOptimizer {
         }
 
         // Solve the LP problem
-        let power_schedule = self.solve_lp(state, forecast, constraints)
+        let power_schedule = self
+            .solve_lp(state, forecast, constraints)
             .context("MILP solver failed")?;
 
         // Convert solution to schedule entries
@@ -282,6 +281,7 @@ impl OptimizationStrategy for MilpOptimizer {
                 time_start: price_point.time_start,
                 time_end: price_point.time_end,
                 target_power_w,
+                price_sek_per_kwh: price_point.price_sek_per_kwh,
                 reason: reason.to_string(),
             });
         }
@@ -303,7 +303,7 @@ impl OptimizationStrategy for MilpOptimizer {
 #[cfg(all(test, feature = "optimization"))]
 mod tests {
     use super::*;
-    use crate::domain::{BatteryState, PricePoint, PriceArea};
+    use crate::domain::{BatteryState, PriceArea, PricePoint};
     use chrono::Duration;
 
     fn create_test_forecast() -> Forecast24h {
@@ -361,7 +361,10 @@ mod tests {
         let constraints = Constraints::default();
         let forecast = create_test_forecast();
 
-        let schedule = optimizer.optimize(&state, &forecast, &constraints).await.unwrap();
+        let schedule = optimizer
+            .optimize(&state, &forecast, &constraints)
+            .await
+            .unwrap();
 
         // Verify schedule structure
         assert_eq!(schedule.entries.len(), 24);
@@ -372,18 +375,18 @@ mod tests {
         let day_entries: Vec<_> = schedule.entries.iter().skip(9).take(9).collect();
 
         // Night should have more charging (positive power)
-        let night_avg_power: f64 = night_entries.iter()
-            .map(|e| e.target_power_w)
-            .sum::<f64>() / night_entries.len() as f64;
+        let night_avg_power: f64 = night_entries.iter().map(|e| e.target_power_w).sum::<f64>()
+            / night_entries.len() as f64;
 
         // Day should have more discharging (negative power)
-        let day_avg_power: f64 = day_entries.iter()
-            .map(|e| e.target_power_w)
-            .sum::<f64>() / day_entries.len() as f64;
+        let day_avg_power: f64 =
+            day_entries.iter().map(|e| e.target_power_w).sum::<f64>() / day_entries.len() as f64;
 
         // Night charging should be higher than day (or day should be negative)
-        assert!(night_avg_power > day_avg_power,
-            "MILP should charge at night (low prices) and discharge during day (high prices)");
+        assert!(
+            night_avg_power > day_avg_power,
+            "MILP should charge at night (low prices) and discharge during day (high prices)"
+        );
     }
 
     #[tokio::test]
@@ -405,22 +408,34 @@ mod tests {
         let constraints = Constraints::default();
         let forecast = create_test_forecast();
 
-        let schedule = optimizer.optimize(&state, &forecast, &constraints).await.unwrap();
+        let schedule = optimizer
+            .optimize(&state, &forecast, &constraints)
+            .await
+            .unwrap();
 
         // Simulate SoC through schedule to verify constraints
         let mut soc = state.battery.soc_percent;
         for entry in &schedule.entries {
             let duration = entry.time_end.signed_duration_since(entry.time_start);
             let duration_h = duration.num_minutes() as f64 / 60.0;
-            let energy_kwh = (entry.target_power_w / 1000.0) * duration_h * constraints.battery_efficiency;
+            let energy_kwh =
+                (entry.target_power_w / 1000.0) * duration_h * constraints.battery_efficiency;
             let soc_change = (energy_kwh / constraints.battery_capacity_kwh) * 100.0;
             soc += soc_change;
 
             // Verify SoC stays within bounds (with small tolerance for numerical errors)
-            assert!(soc >= constraints.min_soc_percent - 0.1,
-                "SoC {} below minimum {}", soc, constraints.min_soc_percent);
-            assert!(soc <= constraints.max_soc_percent + 0.1,
-                "SoC {} above maximum {}", soc, constraints.max_soc_percent);
+            assert!(
+                soc >= constraints.min_soc_percent - 0.1,
+                "SoC {} below minimum {}",
+                soc,
+                constraints.min_soc_percent
+            );
+            assert!(
+                soc <= constraints.max_soc_percent + 0.1,
+                "SoC {} above maximum {}",
+                soc,
+                constraints.max_soc_percent
+            );
         }
     }
 }

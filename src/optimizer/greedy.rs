@@ -86,7 +86,9 @@ impl GreedyOptimizer {
         }
 
         // Discharge decision
-        if price > avg_price * self.discharge_threshold && current_soc > constraints.min_soc_percent + 20.0 {
+        if price > avg_price * self.discharge_threshold
+            && current_soc > constraints.min_soc_percent + 20.0
+        {
             let power = if current_soc > constraints.max_soc_percent - 10.0 {
                 // Discharge faster if SoC is high
                 -max_discharge_w
@@ -102,7 +104,13 @@ impl GreedyOptimizer {
     }
 
     /// Simulate SoC change based on power command
-    fn simulate_soc_change(current_soc: f64, power_w: f64, duration_h: f64, capacity_kwh: f64, efficiency: f64) -> f64 {
+    fn simulate_soc_change(
+        current_soc: f64,
+        power_w: f64,
+        duration_h: f64,
+        capacity_kwh: f64,
+        efficiency: f64,
+    ) -> f64 {
         // Prevent division by zero
         if capacity_kwh <= 0.0 {
             return current_soc;
@@ -154,18 +162,27 @@ impl OptimizationStrategy for GreedyOptimizer {
             );
 
             // Calculate duration for this interval (typically 1 hour)
-            let duration = price_point.time_end.signed_duration_since(price_point.time_start);
+            let duration = price_point
+                .time_end
+                .signed_duration_since(price_point.time_start);
             let duration_h = duration.num_minutes() as f64 / 60.0;
 
             entries.push(ScheduleEntry {
                 time_start: price_point.time_start,
                 time_end: price_point.time_end,
                 target_power_w,
+                price_sek_per_kwh: price_point.price_sek_per_kwh,
                 reason: format!("greedy:{}", reason),
             });
 
             // Update simulated SoC for next iteration
-            current_soc = Self::simulate_soc_change(current_soc, target_power_w, duration_h, capacity_kwh, efficiency);
+            current_soc = Self::simulate_soc_change(
+                current_soc,
+                target_power_w,
+                duration_h,
+                capacity_kwh,
+                efficiency,
+            );
         }
 
         let valid_from = entries.first().map(|e| e.time_start).unwrap_or(now);

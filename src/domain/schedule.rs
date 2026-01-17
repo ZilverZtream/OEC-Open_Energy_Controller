@@ -21,6 +21,8 @@ pub struct ScheduleEntry {
     pub time_start: DateTime<Utc>,
     pub time_end: DateTime<Utc>,
     pub target_power_w: f64,
+    /// Import price in SEK/kWh for this interval.
+    pub price_sek_per_kwh: f64,
     pub reason: String,
 }
 
@@ -78,7 +80,11 @@ impl Schedule {
     /// minor schedule alignment issues while still rejecting large gaps.
     pub fn power_at(&self, t: DateTime<Utc>) -> Option<f64> {
         // First, try exact match
-        if let Some(entry) = self.entries.iter().find(|e| t >= e.time_start && t < e.time_end) {
+        if let Some(entry) = self
+            .entries
+            .iter()
+            .find(|e| t >= e.time_start && t < e.time_end)
+        {
             return Some(entry.target_power_w);
         }
 
@@ -116,6 +122,9 @@ impl Schedule {
         for (index, entry) in self.entries.iter().enumerate() {
             // Validate target_power_w is finite
             if !entry.target_power_w.is_finite() {
+                return Err(ScheduleValidationError::InvalidEntryRange { index });
+            }
+            if !entry.price_sek_per_kwh.is_finite() {
                 return Err(ScheduleValidationError::InvalidEntryRange { index });
             }
 
@@ -197,12 +206,14 @@ mod tests {
                 time_start: t0,
                 time_end: t1,
                 target_power_w: 100.0,
+                price_sek_per_kwh: 1.0,
                 reason: "slot-1".to_string(),
             },
             ScheduleEntry {
                 time_start: t1,
                 time_end: t2,
                 target_power_w: 200.0,
+                price_sek_per_kwh: 1.2,
                 reason: "slot-2".to_string(),
             },
         ]);
@@ -222,12 +233,14 @@ mod tests {
                 time_start: t0,
                 time_end: t1,
                 target_power_w: 100.0,
+                price_sek_per_kwh: 1.0,
                 reason: "slot-1".to_string(),
             },
             ScheduleEntry {
                 time_start: t2,
                 time_end: t3,
                 target_power_w: 200.0,
+                price_sek_per_kwh: 1.2,
                 reason: "slot-2".to_string(),
             },
         ]);
@@ -252,12 +265,14 @@ mod tests {
                 time_start: t0,
                 time_end: t2,
                 target_power_w: 100.0,
+                price_sek_per_kwh: 1.0,
                 reason: "slot-1".to_string(),
             },
             ScheduleEntry {
                 time_start: t1,
                 time_end: t2,
                 target_power_w: 200.0,
+                price_sek_per_kwh: 1.2,
                 reason: "slot-2".to_string(),
             },
         ]);
@@ -286,6 +301,7 @@ mod tests {
                 time_start: t0,
                 time_end: t2,
                 target_power_w: 100.0,
+                price_sek_per_kwh: 1.0,
                 reason: "slot-1".to_string(),
             }],
             optimizer_version: "test".to_string(),
