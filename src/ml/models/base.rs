@@ -3,7 +3,7 @@
 //!
 //! This module contains concrete ML model implementations for various forecasting tasks.
 
-use super::{FeatureVector, ModelMetadata, ModelType, Prediction, ValidationMetrics};
+use crate::ml::{FeatureVector, ModelMetadata, ModelType, Prediction, ValidationMetrics};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 

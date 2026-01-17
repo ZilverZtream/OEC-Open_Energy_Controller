@@ -4,6 +4,7 @@ pub mod power_transition;
 pub mod safety;
 pub mod safety_monitor;
 pub mod scheduler;
+pub mod v2x_controller;
 
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};

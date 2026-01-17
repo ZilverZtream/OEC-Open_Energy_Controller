@@ -40,6 +40,6 @@ pub mod house;
 pub mod solar;
 
 pub use environment::{Environment, EnvironmentConfig, EnvironmentState};
-pub use grid::{GridSimulator, GridState};
-pub use house::{HouseSimulator, HouseState, LoadProfile};
-pub use solar::{ClearSkyModel, CloudCover, SolarSimulator, SolarState};
+pub use grid::{GridSimulator, GridSimulatorConfig, GridState};
+pub use house::{HouseSimulator, HouseSimulatorConfig, HouseState, LoadProfile};
+pub use solar::{ClearSkyModel, CloudCover, SolarSimulator, SolarSimulatorConfig, SolarState};

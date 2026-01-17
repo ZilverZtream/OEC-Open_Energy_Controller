@@ -12,8 +12,11 @@ pub struct AuthConfig {
     pub token: String,
 }
 
+/// Create an authentication middleware layer
+///
+/// This returns a middleware layer that checks for Bearer token authentication
 pub fn auth_layer(token: String) -> impl Clone {
-    middleware::from_fn(move |req: Request<Body>, next: Next| {
+    middleware::from_fn::<_, Response>(move |req: Request<Body>, next: Next| {
         let token = token.clone();
         async move {
             let auth_header = req
@@ -25,7 +28,7 @@ pub fn auth_layer(token: String) -> impl Clone {
                 Some(auth) if auth.starts_with("Bearer ") => {
                     let provided_token = &auth[7..];
                     if provided_token == token {
-                        Ok(next.run(req).await)
+                        Ok::<_, StatusCode>(next.run(req).await)
                     } else {
                         Err(StatusCode::UNAUTHORIZED)
                     }

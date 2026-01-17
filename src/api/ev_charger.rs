@@ -48,6 +48,8 @@ pub async fn get_charger_state(
         energy_delivered_kwh: 0.0,
         session_duration_seconds: 0,
         vehicle_soc_percent: None,
+        discharging: false,
+        energy_discharged_kwh: 0.0,
     };
 
     let response = EvChargerResponse {

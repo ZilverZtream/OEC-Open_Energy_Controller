@@ -78,6 +78,8 @@ impl Default for OcppChargerInternalState {
                 energy_delivered_kwh: 0.0,
                 session_duration_seconds: 0,
                 vehicle_soc_percent: None,
+                discharging: false,
+                energy_discharged_kwh: 0.0,
             },
             transaction_id: None,
             last_ocpp_status: ChargePointStatus::Available,
@@ -349,6 +351,8 @@ impl EvCharger for OcppEvCharger {
                 energy_delivered_kwh: 0.0,
                 session_duration_seconds: 0,
                 vehicle_soc_percent: None,
+                discharging: false,
+                energy_discharged_kwh: 0.0,
             });
         }
 
