@@ -1,11 +1,11 @@
 #![allow(dead_code)]
+pub mod maintenance;
 pub mod pid;
 pub mod power_transition;
 pub mod safety;
 pub mod safety_monitor;
 pub mod scheduler;
 pub mod v2x_controller;
-pub mod maintenance;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -17,10 +17,9 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::power_flow::{
-    AllConstraints,
-    PowerFlowInputs,
-    constraints::{PhysicalConstraints, SafetyConstraints, EconomicObjectives},
+    constraints::{EconomicObjectives, PhysicalConstraints, SafetyConstraints},
     model::PowerFlowModel,
+    AllConstraints, PowerFlowInputs,
 };
 use crate::simulation::{Environment, EnvironmentConfig};
 
@@ -59,19 +58,34 @@ impl AppState {
 
         // Validate capabilities
         if !caps.capacity_kwh.is_finite() || caps.capacity_kwh <= 0.0 {
-            bail!("Battery capacity_kwh must be positive and finite, got: {}", caps.capacity_kwh);
+            bail!(
+                "Battery capacity_kwh must be positive and finite, got: {}",
+                caps.capacity_kwh
+            );
         }
         if !caps.max_charge_kw.is_finite() || caps.max_charge_kw <= 0.0 {
-            bail!("Battery max_charge_kw must be positive and finite, got: {}", caps.max_charge_kw);
+            bail!(
+                "Battery max_charge_kw must be positive and finite, got: {}",
+                caps.max_charge_kw
+            );
         }
         if !caps.max_discharge_kw.is_finite() || caps.max_discharge_kw <= 0.0 {
-            bail!("Battery max_discharge_kw must be positive and finite, got: {}", caps.max_discharge_kw);
+            bail!(
+                "Battery max_discharge_kw must be positive and finite, got: {}",
+                caps.max_discharge_kw
+            );
         }
         if !caps.efficiency.is_finite() || caps.efficiency <= 0.0 || caps.efficiency > 1.0 {
-            bail!("Battery efficiency must be between 0 and 1, got: {}", caps.efficiency);
+            bail!(
+                "Battery efficiency must be between 0 and 1, got: {}",
+                caps.efficiency
+            );
         }
         if !caps.degradation_per_cycle.is_finite() || caps.degradation_per_cycle < 0.0 {
-            bail!("Battery degradation_per_cycle must be non-negative and finite, got: {}", caps.degradation_per_cycle);
+            bail!(
+                "Battery degradation_per_cycle must be non-negative and finite, got: {}",
+                caps.degradation_per_cycle
+            );
         }
         // CRITICAL FIX: Use DeviceFactory to respect hardware configuration
         // Previously, this was hardcoded to use SimulatedBattery regardless of config
@@ -192,8 +206,7 @@ impl AppState {
         let v2x_controller = if ev_charger.v2x_capabilities().is_some() {
             let v2x_config = v2x_controller::V2XConfig::default();
             Some(Arc::new(v2x_controller::V2XController::new(
-                ev_charger,
-                v2x_config,
+                ev_charger, v2x_config,
             )))
         } else {
             None
@@ -202,8 +215,8 @@ impl AppState {
         // CRITICAL FIX: Initialize Safety Monitor BEFORE controller
         // This provides defense-in-depth against hardware failures
         let safety_config = safety_monitor::SafetyMonitorConfig {
-            check_interval_s: 1, // Fast 1-second monitoring
-            fuse_rating_a: 25.0, // Default 25A fuse
+            check_interval_s: 1,   // Fast 1-second monitoring
+            fuse_rating_a: 25.0,   // Default 25A fuse
             fuse_trip_margin: 0.1, // Trip at 90% of rating
             grid_voltage_min_v: 207.0,
             grid_voltage_max_v: 253.0,
@@ -242,13 +255,16 @@ impl AppState {
         // CRITICAL FIX: Create bounded channel for state recording to prevent resource leak
         // Limits pending database writes to 100 to prevent OOM during long simulations
         #[cfg(feature = "db")]
-        let (state_write_tx, mut state_write_rx) = tokio::sync::mpsc::channel::<(DateTime<Utc>, BatteryState)>(100);
+        let (state_write_tx, mut state_write_rx) =
+            tokio::sync::mpsc::channel::<(DateTime<Utc>, BatteryState)>(100);
 
         #[cfg(feature = "db")]
         let state_write_tx_opt = Some(state_write_tx);
 
         #[cfg(not(feature = "db"))]
-        let state_write_tx_opt: Option<tokio::sync::mpsc::Sender<(DateTime<Utc>, BatteryState)>> = None;
+        let state_write_tx_opt: Option<
+            tokio::sync::mpsc::Sender<(DateTime<Utc>, BatteryState)>,
+        > = None;
 
         let history_capacity = ((24 * 60 * 60) / cfg.controller.tick_seconds.max(1)) as usize;
         let household_id = Uuid::new_v4();
@@ -295,7 +311,12 @@ impl AppState {
                         temperature_c: Some(state.temperature_c),
                     };
 
-                    if let Err(e) = repos_clone.db.battery_states().insert(&battery_state_row).await {
+                    if let Err(e) = repos_clone
+                        .db
+                        .battery_states()
+                        .insert(&battery_state_row)
+                        .await
+                    {
                         error!(error=%e, "Failed to persist battery state to database");
                     }
                 }
@@ -401,16 +422,18 @@ pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
             // Get current battery state for safety checks
             if let Ok(battery_state) = controller_for_safety.get_current_state().await {
                 // Get real grid status from controller (use safe defaults if unavailable)
-                let grid_status = controller_for_safety.get_grid_status().await.unwrap_or(
-                    GridConnection {
-                        status: GridStatus::Normal,
-                        import_power_w: 0.0,
-                        export_power_w: 0.0,
-                        frequency_hz: 50.0,
-                        voltage_v: 230.0,
-                        current_a: 0.0,
-                    }
-                );
+                let grid_status =
+                    controller_for_safety
+                        .get_grid_status()
+                        .await
+                        .unwrap_or(GridConnection {
+                            status: GridStatus::Normal,
+                            import_power_w: 0.0,
+                            export_power_w: 0.0,
+                            frequency_hz: 50.0,
+                            voltage_v: 230.0,
+                            current_a: 0.0,
+                        });
 
                 let measurements = safety_monitor::SafetyMeasurements {
                     grid_import_kw: grid_status.import_power_w / 1000.0, // Convert W to kW
@@ -424,12 +447,15 @@ pub fn spawn_controller_tasks(state: AppState, cfg: Config) {
 
                 let violations = safety_monitor.check_safety(&measurements).await;
                 if !violations.is_empty() {
-                    warn!("Safety violations detected: {} violations", violations.len());
+                    warn!(
+                        "Safety violations detected: {} violations",
+                        violations.len()
+                    );
                 }
             }
         }
     });
-    
+
     // CRITICAL FIX: Spawn Database Maintenance Tasks
     // This prevents database bloat from high-frequency data logging
     maintenance::spawn_maintenance_tasks(Arc::clone(&state_arc));
@@ -520,7 +546,7 @@ impl BatteryController {
                     }
 
                     s
-                },
+                }
                 Err(e) => {
                     error!(error=%e, "Control loop sensor failure - will retry");
 
@@ -572,8 +598,8 @@ impl BatteryController {
                 .as_ref()
                 .and_then(|s| s.power_at(now_utc));
 
-            // CRITICAL FIX: Evaluate AND EXECUTE V2X discharge decision
-            // Previously only evaluated but never executed - "Zombie V2X" bug
+            // CRITICAL FIX: Evaluate V2X discharge decision and feed target into PowerFlowModel
+            // EV commands are issued only after PowerFlowModel computes a safe snapshot
             let mut ev_target_w: Option<f64> = None;
             if let Some(ref v2x) = self.v2x {
                 // Get current price for V2X decision
@@ -583,7 +609,8 @@ impl BatteryController {
                     .await
                     .as_ref()
                     .and_then(|s| {
-                        s.entries.iter()
+                        s.entries
+                            .iter()
                             .find(|e| e.time_start <= now_utc && now_utc < e.time_end)
                             .map(|_| 1.5) // TODO: Extract actual price from schedule
                     })
@@ -602,17 +629,17 @@ impl BatteryController {
                     .unwrap_or(1.5);
 
                 // Evaluate V2X discharge decision
-                match v2x.evaluate_discharge_decision(current_price, avg_price, now_utc).await {
+                match v2x
+                    .evaluate_discharge_decision(current_price, avg_price, now_utc)
+                    .await
+                {
                     Ok(decision) => {
-                        // CRITICAL FIX: Actually EXECUTE the decision, not just evaluate it
-                        if let Err(e) = v2x.execute_decision(&decision).await {
-                            warn!(error=%e, "V2X decision execution failed");
-                        } else if decision.should_discharge && decision.target_power_w > 0.0 {
+                        if decision.should_discharge && decision.target_power_w > 0.0 {
                             info!(
                                 power_w = -decision.target_power_w,
                                 reason = %decision.reason,
                                 vehicle_soc = decision.vehicle_soc,
-                                "V2X EV discharge active (V2G/V2H)"
+                                "V2X EV discharge requested (V2G/V2H)"
                             );
                             // Store EV target separately (negative = discharge from EV)
                             ev_target_w = Some(-decision.target_power_w);
@@ -640,7 +667,8 @@ impl BatteryController {
                 .as_ref()
                 .and_then(|s| {
                     // Find the current price from schedule entries
-                    s.entries.iter()
+                    s.entries
+                        .iter()
                         .find(|e| e.time_start <= now_utc && now_utc < e.time_end)
                         .map(|_| 1.5)
                 })
@@ -669,10 +697,9 @@ impl BatteryController {
             if let Err(e) = inputs.validate() {
                 warn!(error=%e, "Invalid PowerFlowInputs, using fallback");
                 let caps = self.battery.capabilities();
-                let fallback_w = schedule_target_w.unwrap_or(0.0).clamp(
-                    -caps.max_discharge_kw * 1000.0,
-                    caps.max_charge_kw * 1000.0
-                );
+                let fallback_w = schedule_target_w
+                    .unwrap_or(0.0)
+                    .clamp(-caps.max_discharge_kw * 1000.0, caps.max_charge_kw * 1000.0);
                 self.battery.set_power(fallback_w).await?;
                 continue;
             }
@@ -681,7 +708,8 @@ impl BatteryController {
             let model = PowerFlowModel::new((*self.power_flow_constraints).clone());
 
             // Compute power flows with safety checks
-            let (target_power_w, ev_current_a) = match model.compute_flows(&inputs) {
+            let (target_power_w, ev_current_a, ev_discharge_w) = match model.compute_flows(&inputs)
+            {
                 Ok(snapshot) => {
                     // Use the battery power from PowerFlowModel
                     // Convert kW to W
@@ -691,6 +719,11 @@ impl BatteryController {
                     // Convert kW to current: I = P / V (assuming 230V single-phase)
                     let ev_current_a = if snapshot.ev_kw > 0.0 {
                         snapshot.ev_kw * 1000.0 / 230.0 // kW -> A
+                    } else {
+                        0.0
+                    };
+                    let ev_discharge_w = if snapshot.ev_kw < 0.0 {
+                        -snapshot.ev_kw * 1000.0
                     } else {
                         0.0
                     };
@@ -706,16 +739,17 @@ impl BatteryController {
                         grid_kw = snapshot.grid_kw,
                         ev_kw = snapshot.ev_kw,
                         ev_current_a = ev_current_a,
+                        ev_discharge_w = ev_discharge_w,
                         "PowerFlowModel decision"
                     );
 
-                    (battery_target_w, ev_current_a)
+                    (battery_target_w, ev_current_a, ev_discharge_w)
                 }
                 Err(e) => {
                     // If PowerFlowModel fails due to constraint violations,
                     // the safest fallback is to idle the battery and stop EV charging
                     warn!(error=%e, "PowerFlowModel failed, entering safe fallback mode (Idle)");
-                    (0.0, 0.0)
+                    (0.0, 0.0, 0.0)
                 }
             };
 
@@ -723,6 +757,7 @@ impl BatteryController {
             // This prevents race condition where main loop and safety monitor fight over setpoints
             let mut commanded_power_w = target_power_w;
             let mut commanded_ev_current_a = ev_current_a;
+            let mut commanded_ev_discharge_w = ev_discharge_w;
 
             if let Some(ref safety_monitor) = self.safety_monitor {
                 let safety_state = safety_monitor.state().await;
@@ -730,6 +765,7 @@ impl BatteryController {
                     warn!("Safety monitor emergency stop active - overriding commands to 0");
                     commanded_power_w = 0.0;
                     commanded_ev_current_a = 0.0;
+                    commanded_ev_discharge_w = 0.0;
                 }
             }
 
@@ -739,20 +775,54 @@ impl BatteryController {
             let max_discharge_w = caps.max_discharge_kw * 1000.0;
             commanded_power_w = commanded_power_w.clamp(-max_discharge_w, max_charge_w);
 
-            // CRITICAL FIX: Actuate EV charger to prevent fuse overload
-            // The PowerFlowModel calculated the safe EV charging current.
-            // We MUST apply it, or the main fuse will blow during high house load.
-            if let Err(e) = self.ev_charger.set_current(commanded_ev_current_a).await {
-                error!(
-                    error = %e,
-                    commanded_current_a = commanded_ev_current_a,
-                    "Failed to set EV charger current"
-                );
-            } else {
-                debug!(
-                    ev_current_a = commanded_ev_current_a,
-                    "EV charger current updated"
-                );
+            if let Some(ref _v2x) = self.v2x {
+                if commanded_ev_discharge_w > 0.0 {
+                    if let Err(e) = self.ev_charger.start_discharging().await {
+                        error!(
+                            error = %e,
+                            commanded_power_w = commanded_ev_discharge_w,
+                            "Failed to start EV discharging"
+                        );
+                    } else if let Err(e) = self
+                        .ev_charger
+                        .set_discharge_power(commanded_ev_discharge_w)
+                        .await
+                    {
+                        error!(
+                            error = %e,
+                            commanded_power_w = commanded_ev_discharge_w,
+                            "Failed to set EV discharge power"
+                        );
+                    } else {
+                        debug!(
+                            ev_discharge_w = commanded_ev_discharge_w,
+                            "EV discharge power updated"
+                        );
+                    }
+                } else if let Err(e) = self.ev_charger.stop_discharging().await {
+                    error!(
+                        error = %e,
+                        "Failed to stop EV discharging"
+                    );
+                }
+            }
+
+            if commanded_ev_discharge_w <= 0.0 {
+                // CRITICAL FIX: Actuate EV charger to prevent fuse overload
+                // The PowerFlowModel calculated the safe EV charging current.
+                // We MUST apply it, or the main fuse will blow during high house load.
+                if let Err(e) = self.ev_charger.set_current(commanded_ev_current_a).await {
+                    error!(
+                        error = %e,
+                        commanded_current_a = commanded_ev_current_a,
+                        "Failed to set EV charger current"
+                    );
+                } else {
+                    debug!(
+                        ev_current_a = commanded_ev_current_a,
+                        "EV charger current updated"
+                    );
+                }
             }
 
             self.battery.set_power(commanded_power_w).await?;
@@ -762,6 +832,7 @@ impl BatteryController {
                 target_power_w = target_power_w,
                 commanded_power_w = commanded_power_w,
                 ev_current_a = ev_current_a,
+                ev_discharge_w = ev_discharge_w,
                 "control tick"
             );
         }
@@ -984,7 +1055,10 @@ impl BatteryController {
         // }
 
         // Fallback to config (only for real hardware mode)
-        self.config.hardware.sensor_fallback.default_pv_production_kw
+        self.config
+            .hardware
+            .sensor_fallback
+            .default_pv_production_kw
     }
 
     /// Get current house load (kW)
@@ -1018,7 +1092,10 @@ impl BatteryController {
             while history.len() >= self.history_capacity {
                 history.pop_front();
             }
-            history.push_back(BatteryStateSample { timestamp, state: state.clone() });
+            history.push_back(BatteryStateSample {
+                timestamp,
+                state: state.clone(),
+            });
         }
 
         // CRITICAL FIX: Send to bounded channel instead of spawning unbounded tasks
@@ -1171,7 +1248,8 @@ mod tests {
         };
 
         // Create a simulated EV charger for tests
-        let ev_charger = Arc::new(crate::domain::SimulatedEvCharger::new()) as Arc<dyn crate::domain::EvCharger>;
+        let ev_charger =
+            Arc::new(crate::domain::SimulatedEvCharger::new()) as Arc<dyn crate::domain::EvCharger>;
 
         BatteryController {
             battery,
@@ -1191,7 +1269,7 @@ mod tests {
             v2x: None, // No V2X in tests by default
             ev_charger,
             safety_monitor: None, // No safety monitor in tests by default
-            environment: None, // No environment in tests by default
+            environment: None,    // No environment in tests by default
             #[cfg(feature = "db")]
             state_write_tx: None, // No DB writes in tests by default
         }
