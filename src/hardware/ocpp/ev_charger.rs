@@ -8,7 +8,7 @@ use crate::domain::ev_charger::{
 use crate::ocpp::messages::{
     ChargePointStatus, ChargingProfile, ChargingProfileKind, ChargingProfilePurpose,
     ChargingRateUnit, ChargingSchedule, ChargingSchedulePeriod, RemoteStartStopStatus,
-    RemoteStartTransactionRequest, RemoteStopTransactionRequest, StatusNotificationRequest,
+    RemoteStartTransactionRequest, RemoteStopTransactionRequest,
 };
 use crate::ocpp::{ConnectionState, OcppClient};
 use anyhow::Result;
@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Configuration for OCPP EV Charger
 #[derive(Debug, Clone)]
@@ -226,7 +226,7 @@ impl OcppEvCharger {
         );
 
         // Create a charging profile with a single period
-        let profile = ChargingProfile {
+        let _profile = ChargingProfile {
             charging_profile_id: 1,
             stack_level: 0,
             charging_profile_purpose: ChargingProfilePurpose::TxProfile,
@@ -270,7 +270,7 @@ impl OcppEvCharger {
     async fn send_remote_start(&self) -> Result<()> {
         debug!("Sending RemoteStartTransaction");
 
-        let request = RemoteStartTransactionRequest {
+        let _request = RemoteStartTransactionRequest {
             id_tag: self.config.default_id_tag.clone(),
             connector_id: Some(self.config.connector_id),
             charging_profile: None, // Can set initial profile here if needed
@@ -310,7 +310,7 @@ impl OcppEvCharger {
 
         drop(state); // Release read lock
 
-        let request = RemoteStopTransactionRequest { transaction_id };
+        let _request = RemoteStopTransactionRequest { transaction_id };
 
         // TODO: Actually send OCPP message via WebSocket
         info!("Would send RemoteStopTransaction for transaction {}", transaction_id);

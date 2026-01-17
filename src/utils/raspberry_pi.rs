@@ -25,7 +25,7 @@ impl<T: Copy + Default, const N: usize> FixedRingBuffer<T, N> {
     pub fn new() -> Self {
         const STACK_SAFETY_LIMIT: usize = 512 * 1024; // 512 KB
 
-        let size_bytes = std::mem::size_of::<Option<T>>() * N;
+        let _size_bytes = std::mem::size_of::<Option<T>>() * N;
 
         // Always use Box for heap allocation to be safe
         // The compiler will optimize small allocations

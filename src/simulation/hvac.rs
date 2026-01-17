@@ -69,7 +69,7 @@ impl DhwTankState {
         const WATER_SPECIFIC_HEAT: f64 = 4186.0; // J/(kg·K)
         const WATER_DENSITY: f64 = 1.0; // kg/L
 
-        let dt_hours = dt_seconds / 3600.0;
+        let _dt_hours = dt_seconds / 3600.0;
 
         // Heat loss to ambient
         let heat_loss_w = (self.temp_c - self.ambient_temp_c) * self.heat_loss_rate_w_per_k;
@@ -149,7 +149,7 @@ pub trait HvacSystem: Send + Sync {
     fn name(&self) -> &str;
 
     /// Extended step with DHW priority and full state
-    fn step_extended(&mut self, dt_seconds: f64, indoor_temp: f64, outdoor_temp: f64, dhw_draw_liters: f64) -> HvacStepResult {
+    fn step_extended(&mut self, dt_seconds: f64, indoor_temp: f64, outdoor_temp: f64, _dhw_draw_liters: f64) -> HvacStepResult {
         // Default implementation for backward compatibility
         let (load, heat) = self.step(dt_seconds, indoor_temp, outdoor_temp);
         HvacStepResult {
@@ -290,7 +290,7 @@ impl HvacSystem for GeothermalHeatPump {
         }
     }
 
-    fn step_extended(&mut self, dt_seconds: f64, indoor_temp: f64, outdoor_temp: f64, dhw_draw_liters: f64) -> HvacStepResult {
+    fn step_extended(&mut self, dt_seconds: f64, indoor_temp: f64, _outdoor_temp: f64, dhw_draw_liters: f64) -> HvacStepResult {
         const MOTOR_STARTUP_SURGE_DURATION: f64 = 0.2; // 200ms
         const MOTOR_STARTUP_SURGE_MULTIPLIER: f64 = 6.0; // 6x rated current (LRA)
 

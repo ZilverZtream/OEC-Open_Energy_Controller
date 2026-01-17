@@ -201,6 +201,7 @@ impl Default for DeviceFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::BatteryChemistry;
 
     #[tokio::test]
     async fn test_factory_creates_simulated_battery() {
@@ -214,7 +215,7 @@ mod tests {
             chemistry: BatteryChemistry::LiFePO4,
         };
 
-        let battery = factory.create_battery(caps, 50.0, 25.0);
+        let battery = factory.create_battery(caps, 50.0, 25.0).await;
         let state = battery.read_state().await.unwrap();
 
         assert_eq!(state.soc_percent, 50.0);

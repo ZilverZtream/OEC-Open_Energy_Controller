@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_error_response() {
-        let response: ApiResponse<()> = ApiResponse::error("test error");
+        let response = ApiResponse::<()>::error("test error");
         assert!(!response.success);
         assert!(response.data.is_none());
         assert_eq!(response.error, Some("test error".to_string()));

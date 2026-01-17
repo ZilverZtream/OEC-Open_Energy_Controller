@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn test_thermal_equilibrium() {
         let config = BatteryThermalConfig::default();
-        let mut sim = BatteryThermalSimulator::new(config);
+        let mut sim = BatteryThermalSimulator::new(config.clone());
 
         // No power flow - should stay at ambient
         for _ in 0..120 {
@@ -395,6 +395,7 @@ mod tests {
         let mut config = BatteryThermalConfig::default();
         config.critical_temp_c = 50.0;
         config.ambient_temp_c = 45.0;
+        let critical_temp = config.critical_temp_c;
         let mut sim = BatteryThermalSimulator::new(config);
 
         // Apply heavy load to heat battery
@@ -406,7 +407,7 @@ mod tests {
         }
 
         // Should eventually reach critical temperature
-        if sim.temperature_c() >= config.critical_temp_c {
+        if sim.temperature_c() >= critical_temp {
             assert!(sim.state().critical_temp_reached);
         }
     }

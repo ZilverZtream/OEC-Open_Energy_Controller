@@ -740,7 +740,7 @@ mod tests {
         let price = Price::sek_per_kwh(2.0);
         let energy = Energy::kilowatt_hours(10.0);
         let cost = price * energy;
-        assert_eq!(cost, 20.0); // 20 SEK
+        assert_eq!(cost, Money::from_sek(20.0)); // 20 SEK
     }
 
     #[test]

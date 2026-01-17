@@ -87,7 +87,7 @@ impl ElprisetJustNuPriceForecaster {
 #[async_trait]
 impl PriceForecaster for ElprisetJustNuPriceForecaster {
     async fn predict_next_24h(&self, area: PriceArea) -> Result<Vec<PricePoint>> {
-        use tracing::{error, warn};
+        use tracing::warn;
 
         // Check in-memory cache first
         {
@@ -356,7 +356,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_elpriset_just_nu_forecaster() {
-        let forecaster = ElprisetJustNuPriceForecaster::new(
+        let _forecaster = ElprisetJustNuPriceForecaster::new(
             "https://www.elprisetjustnu.se".to_string(),
             Duration::from_secs(3600),
         )
@@ -370,7 +370,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_nordpool_forecaster() {
-        let forecaster = NordpoolPriceForecaster::new(11.0).unwrap();
+        let _forecaster = NordpoolPriceForecaster::new(11.0).unwrap();
 
         // This test requires network access
         // Uncomment to test with real API

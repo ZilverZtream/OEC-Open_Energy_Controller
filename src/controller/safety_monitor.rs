@@ -907,6 +907,7 @@ mod tests {
             battery_soc_percent: 50.0,    // Mid-range
             battery_temperature_c: 25.0,  // Room temperature
             grid_nominal_voltage_v: 230.0,
+            timestamp: chrono::Utc::now(),
         };
 
         let violations = monitor.check_safety(&measurements).await;

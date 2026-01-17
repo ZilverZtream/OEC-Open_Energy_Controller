@@ -1234,8 +1234,29 @@ mod tests {
         };
 
         // Create a simulated EV charger for tests
+        let initial_state = crate::domain::ev_charger::ChargerState {
+            status: crate::domain::ChargerStatus::Available,
+            connected: false,
+            charging: false,
+            current_amps: 0.0,
+            power_w: 0.0,
+            energy_delivered_kwh: 0.0,
+            session_duration_seconds: 0,
+            vehicle_soc_percent: None,
+            discharging: false,
+            energy_discharged_kwh: 0.0,
+        };
+        let caps = crate::domain::ev_charger::ChargerCapabilities {
+            max_current_amps: 32.0,
+            min_current_amps: 6.0,
+            phases: 3,
+            voltage_v: 230.0,
+            connector_type: crate::domain::ConnectorType::Type2,
+            power_max_kw: 22.0,
+            supports_v2g: false,
+        };
         let ev_charger =
-            Arc::new(crate::domain::SimulatedEvCharger::new()) as Arc<dyn crate::domain::EvCharger>;
+            Arc::new(crate::domain::SimulatedEvCharger::new(initial_state, caps)) as Arc<dyn crate::domain::EvCharger>;
 
         BatteryController {
             battery,

@@ -416,7 +416,7 @@ mod tests {
         let sim = ThreePhaseSimulator::new(230.0, 25.0);
 
         // Scenario: 6kW house load on L1, 6kW solar balanced
-        let mut state = sim.create_state(6000.0, 6000.0, 0.0);
+        let state = sim.create_state(6000.0, 6000.0, 0.0);
 
         // Net should be 0, but phases are unbalanced
         assert!((state.grid_power.total()).abs() < 100.0); // Close to zero

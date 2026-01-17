@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-use anyhow::Result;
 #[cfg(all(feature = "ml", feature = "db"))]
 use anyhow::Context;
 use chrono::{DateTime, Utc, Timelike};
