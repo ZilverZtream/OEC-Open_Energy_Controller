@@ -312,7 +312,18 @@ impl Battery for SimulatedBattery {
             power_kw * dt_h / eff
         };
         let delta_pct = (delta_kwh / cap_kwh) * 100.0;
-        st.soc_percent = Self::clamp_soc(st.soc_percent + delta_pct);
+
+        // CRITICAL FIX: Self-discharge when idle
+        // Batteries lose 1-3% per month even when not in use
+        // This is critical for accurate long-term SOC predictions
+        const SELF_DISCHARGE_RATE_PER_MONTH: f64 = 2.0; // 2% per month
+        const HOURS_PER_MONTH: f64 = 730.0; // ~30.4 days
+
+        let self_discharge_rate_per_hour = SELF_DISCHARGE_RATE_PER_MONTH / HOURS_PER_MONTH;
+        let self_discharge_pct = self_discharge_rate_per_hour * dt_h;
+
+        // Apply both active charge/discharge and self-discharge
+        st.soc_percent = Self::clamp_soc(st.soc_percent + delta_pct - self_discharge_pct);
 
         const TEMP_RISE_PER_KW: f64 = 2.0;
         const THERMAL_TIME_CONSTANT: f64 = 600.0;
@@ -325,12 +336,20 @@ impl Battery for SimulatedBattery {
         let temp_change = temp_delta * (1.0 - (-dt_seconds / THERMAL_TIME_CONSTANT).exp());
         st.temperature_c = (st.temperature_c + temp_change).clamp(0.0, MAX_SAFE_TEMP);
 
-        // Degradation simulation - health decreases with cycles
-        // A cycle is a full charge or discharge (100% SoC change)
+        // Degradation simulation - health decreases with cycles AND calendar aging
+        // Cycle degradation: A cycle is a full charge or discharge (100% SoC change)
         let soc_change_pct = delta_pct.abs();
         let partial_cycle = soc_change_pct / 100.0;
-        let degradation = self.caps.degradation_per_cycle * partial_cycle;
-        st.health_percent = (st.health_percent - degradation).max(0.0);
+        let cycle_degradation = self.caps.degradation_per_cycle * partial_cycle;
+
+        // Calendar aging: ~0.5% per year even when idle
+        const CALENDAR_AGING_PER_YEAR: f64 = 0.5;
+        const HOURS_PER_YEAR: f64 = 8760.0;
+        let calendar_aging = (CALENDAR_AGING_PER_YEAR / HOURS_PER_YEAR) * dt_h;
+
+        // Total degradation
+        let total_degradation = cycle_degradation + calendar_aging;
+        st.health_percent = (st.health_percent - total_degradation).max(0.0);
 
         // Update status based on power
         st.status = if watts > 10.0 {
