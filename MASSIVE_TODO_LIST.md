@@ -2213,6 +2213,7 @@
 
 ### V2X Optimization Integration
 - [ ] Update optimizer to consider V2X as additional battery
+- [x] Apply `ev_target_power_w` to EV power allocation in power flow model
 - [ ] Add vehicle battery capacity to optimization model
 - [ ] Add vehicle availability schedule (user inputs when car is home)
 - [ ] Add constraints for minimum vehicle SoC
