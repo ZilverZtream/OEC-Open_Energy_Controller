@@ -125,6 +125,12 @@ pub trait Battery: Send + Sync {
     async fn set_power(&self, watts: f64) -> Result<()>;
     fn capabilities(&self) -> BatteryCapabilities;
     async fn health_check(&self) -> Result<HealthStatus>;
+
+    /// AUDIT FIX #5: Attempt to reconnect if the connection is lost
+    /// Default implementation is no-op for batteries that don't need reconnection
+    async fn reconnect(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]

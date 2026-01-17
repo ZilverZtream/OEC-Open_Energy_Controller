@@ -304,6 +304,19 @@ impl Battery for ModbusBattery {
     fn capabilities(&self) -> BatteryCapabilities {
         self.capabilities.clone()
     }
+
+    /// AUDIT FIX #5: Override default reconnect implementation
+    /// Reconnect to the Modbus device if connection is lost
+    async fn reconnect(&self) -> Result<()> {
+        self.client.reconnect().await
+    }
+
+    async fn health_check(&self) -> Result<crate::domain::HealthStatus> {
+        match self.client.health_check().await {
+            Ok(_) => Ok(crate::domain::HealthStatus::Healthy),
+            Err(_) => Ok(crate::domain::HealthStatus::Offline),
+        }
+    }
 }
 
 #[cfg(test)]

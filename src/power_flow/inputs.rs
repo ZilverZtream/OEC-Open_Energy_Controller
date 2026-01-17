@@ -27,6 +27,11 @@ pub struct PowerFlowInputs {
     /// Positive = charge, negative = discharge, None = no schedule
     pub target_power_w: Option<f64>,
 
+    /// AUDIT FIX #6: Target EV discharge power from V2X controller (W)
+    /// Separate from battery target to prevent V2X from controlling home battery
+    /// Positive = EV charge, negative = EV discharge (V2G/V2H), None = no V2X command
+    pub ev_target_power_w: Option<f64>,
+
     /// Timestamp of this input state
     pub timestamp: DateTime<Utc>,
 }
@@ -128,6 +133,7 @@ impl PowerFlowInputs {
             ev_state: None,
             grid_price_sek_kwh,
             target_power_w: None,
+            ev_target_power_w: None,
             timestamp,
         }
     }
@@ -156,6 +162,12 @@ impl PowerFlowInputs {
     /// Set target battery power from optimizer schedule
     pub fn with_target_power_w(mut self, target_power_w: f64) -> Self {
         self.target_power_w = Some(target_power_w);
+        self
+    }
+
+    /// AUDIT FIX #6: Set target EV power from V2X controller
+    pub fn with_ev_target_power_w(mut self, ev_target_power_w: f64) -> Self {
+        self.ev_target_power_w = Some(ev_target_power_w);
         self
     }
 

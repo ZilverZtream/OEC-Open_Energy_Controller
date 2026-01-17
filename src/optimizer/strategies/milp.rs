@@ -99,14 +99,20 @@ impl MilpOptimizer {
             .map(|p| p.price_sek_per_kwh)
             .collect();
 
+        // AUDIT FIX #4: Extract consumption forecast to account for house load in constraints
+        // If consumption data is available, use it; otherwise assume conservative 2kW baseline
+        let consumption: Vec<f64> = if forecast.consumption.len() == n_periods {
+            forecast.consumption.iter().map(|c| c.load_kw).collect()
+        } else {
+            vec![2.0; n_periods] // Conservative 2kW baseline house load
+        };
+
         // Build the optimization problem
-        let mut problem_builder = problem.minimise(
-            // Objective: minimize cost = sum(price * (charge - discharge) * duration)
-            // Negative discharge because we're selling energy back
-            (0..n_periods).map(|t| {
-                prices[t] * durations[t] * (charge[t] - discharge[t])
-            }).sum()
-        ).using(default_solver);
+        let objective = (0..n_periods).map(|t| {
+            prices[t] * durations[t] * (charge[t] - discharge[t])
+        }).sum::<Expression>();
+
+        let mut problem_builder = problem.minimise(objective).using(default_solver);
 
         // Constraint: Initial SoC
         problem_builder = problem_builder.with(constraint!(
@@ -127,12 +133,23 @@ impl MilpOptimizer {
             ));
 
             // Power limits
+            // Battery charge rate limit
             problem_builder = problem_builder.with(constraint!(
-                charge[t] <= constraints.battery_max_charge_kw.min(constraints.max_power_grid_kw)
+                charge[t] <= constraints.battery_max_charge_kw
             ));
 
+            // Battery discharge rate limit
             problem_builder = problem_builder.with(constraint!(
-                discharge[t] <= constraints.battery_max_discharge_kw.min(constraints.max_power_grid_kw)
+                discharge[t] <= constraints.battery_max_discharge_kw
+            ));
+
+            // AUDIT FIX #4: Fuse limit must account for total grid import (house + battery)
+            // Without this, the optimizer could command 11kW charging while house draws 6kW,
+            // causing a 17kW total draw that blows the 11kW fuse.
+            // The fuse limit is reduced by the house consumption to get max battery charge
+            let max_charge_with_house = constraints.max_power_grid_kw - consumption[t];
+            problem_builder = problem_builder.with(constraint!(
+                charge[t] <= max_charge_with_house
             ));
 
             // SoC bounds

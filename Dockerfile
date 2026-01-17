@@ -37,7 +37,8 @@ RUN apt-get update && apt-get install -y \
 
 # Copy recipe and build dependencies
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --features "swagger,metrics,db,modbus,ocpp" --recipe-path recipe.json
+# AUDIT FIX #3: Add "optimization" feature to enable MILP optimizer
+RUN cargo chef cook --release --features "swagger,metrics,db,modbus,ocpp,optimization" --recipe-path recipe.json
 
 # ============================================================================
 # Stage 4: Build the application
@@ -49,7 +50,8 @@ COPY config ./config
 COPY migrations ./migrations
 
 # Build with full optimizations
-RUN cargo build --release --features "swagger,metrics,db,modbus,ocpp" --bin open-energy-controller
+# AUDIT FIX #3: Add "optimization" feature to enable MILP optimizer
+RUN cargo build --release --features "swagger,metrics,db,modbus,ocpp,optimization" --bin open-energy-controller
 
 # Strip debug symbols to reduce binary size
 RUN strip target/release/open-energy-controller
