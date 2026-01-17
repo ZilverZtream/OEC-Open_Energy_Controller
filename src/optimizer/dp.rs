@@ -76,6 +76,7 @@ impl OptimizationStrategy for DynamicProgrammingOptimizer {
                 time_start: p.time_start,
                 time_end: p.time_end,
                 target_power_w,
+                price_sek_per_kwh: p.price_sek_per_kwh,
                 reason: format!("dp:{:?}", action),
             });
             best_soc = psoc;
@@ -120,8 +121,8 @@ fn simulate_action(
     // This represents the economic cost of wearing out the battery
     // Example: LiFePO4 with 0.0001 degradation/cycle and 50,000 SEK cost
     // = 0.0001 * 50000 = 5 SEK per full cycle
-    let cycle_penalty_per_full_cycle = constraints.battery_degradation_per_cycle
-        * constraints.battery_replacement_cost_sek;
+    let cycle_penalty_per_full_cycle =
+        constraints.battery_degradation_per_cycle * constraints.battery_replacement_cost_sek;
 
     // Use battery physical limits (NOT grid limits!)
     // The constraint is min(grid_limit, battery_limit)
