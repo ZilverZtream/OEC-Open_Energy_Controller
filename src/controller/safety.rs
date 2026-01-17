@@ -2,6 +2,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use tracing::{error, warn};
 
 use crate::domain::{BatteryState, GridConnection, GridStatus};
@@ -89,7 +90,7 @@ impl Default for SafetyConfig {
 /// Safety monitor for battery and grid systems
 pub struct SafetyMonitor {
     config: SafetyConfig,
-    last_events: Vec<(DateTime<Utc>, SafetyEvent)>,
+    last_events: VecDeque<(DateTime<Utc>, SafetyEvent)>,
     max_event_history: usize,
 }
 
@@ -103,7 +104,7 @@ impl SafetyMonitor {
     pub fn with_config(config: SafetyConfig) -> Self {
         Self {
             config,
-            last_events: Vec::new(),
+            last_events: VecDeque::new(),
             max_event_history: 100,
         }
     }
@@ -297,18 +298,21 @@ impl SafetyMonitor {
 
     /// Record a safety event
     fn record_event(&mut self, timestamp: DateTime<Utc>, event: SafetyEvent) {
-        self.last_events.push((timestamp, event));
+        self.last_events.push_back((timestamp, event));
 
-        // Keep only the most recent events
+        // Keep only the most recent events - O(1) with VecDeque
         if self.last_events.len() > self.max_event_history {
-            self.last_events.remove(0);
+            self.last_events.pop_front();
         }
     }
 
     /// Get recent safety events
     pub fn get_recent_events(&self, count: usize) -> Vec<(DateTime<Utc>, SafetyEvent)> {
         let start = self.last_events.len().saturating_sub(count);
-        self.last_events[start..].to_vec()
+        self.last_events.iter()
+            .skip(start)
+            .cloned()
+            .collect()
     }
 
     /// Clear all recorded events

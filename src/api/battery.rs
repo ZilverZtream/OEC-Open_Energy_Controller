@@ -19,7 +19,7 @@ use crate::{
 /// Get current battery state
 pub async fn get_battery_state(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     match st.controller.get_current_state().await {
         Ok(state) => (StatusCode::OK, Json(state)).into_response(),
@@ -36,7 +36,7 @@ pub async fn get_battery_state(
 /// Get battery capabilities
 pub async fn get_battery_capabilities(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     let caps = st.controller.get_battery_capabilities().await;
     (StatusCode::OK, Json(caps)).into_response()
@@ -45,7 +45,7 @@ pub async fn get_battery_capabilities(
 /// Get battery health status
 pub async fn get_battery_health(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     match st.controller.get_battery_health().await {
         Ok(health) => (StatusCode::OK, Json(HealthResponse { health })).into_response(),
@@ -68,7 +68,7 @@ pub struct SetPowerRequest {
 
 pub async fn set_battery_power(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Json(req): Json<SetPowerRequest>,
 ) -> impl IntoResponse {
     match st.controller.set_battery_power(req.power_w).await {
@@ -99,7 +99,7 @@ pub struct BatteryHistoryQuery {
 
 pub async fn get_battery_history(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Query(q): Query<BatteryHistoryQuery>,
 ) -> impl IntoResponse {
     let end_time = q.end_time.unwrap_or_else(Utc::now);
@@ -118,7 +118,7 @@ pub async fn get_battery_history(
 /// Get battery statistics
 pub async fn get_battery_statistics(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Query(q): Query<BatteryStatisticsQuery>,
 ) -> impl IntoResponse {
     let end_time = q.end_time.unwrap_or_else(Utc::now);

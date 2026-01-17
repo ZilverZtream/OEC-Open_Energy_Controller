@@ -9,7 +9,7 @@ use crate::{auth::AuthBearer, controller::AppState};
 /// Get current grid connection status
 pub async fn get_grid_status(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     match st.controller.get_grid_status().await {
         Ok(status) => (StatusCode::OK, Json(status)).into_response(),
@@ -26,7 +26,7 @@ pub async fn get_grid_status(
 /// Get grid limits and tariff information
 pub async fn get_grid_limits(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     match st.controller.get_grid_limits().await {
         Ok(limits) => (StatusCode::OK, Json(limits)).into_response(),
@@ -43,7 +43,7 @@ pub async fn get_grid_limits(
 /// Get grid import/export statistics
 pub async fn get_grid_statistics(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     match st.controller.get_grid_statistics().await {
         Ok(stats) => (StatusCode::OK, Json(stats)).into_response(),

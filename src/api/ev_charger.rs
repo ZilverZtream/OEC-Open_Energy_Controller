@@ -36,7 +36,7 @@ pub struct StartChargingRequest {
 /// Get EV charger current state
 pub async fn get_charger_state(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     // TODO: Get from actual EV charger device when implemented
     let state = ChargerState {
@@ -64,7 +64,7 @@ pub async fn get_charger_state(
 /// Set charging current
 pub async fn set_charging_current(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Json(req): Json<SetCurrentRequest>,
 ) -> impl IntoResponse {
     // Validate current range
@@ -92,7 +92,7 @@ pub async fn set_charging_current(
 /// Start charging session
 pub async fn start_charging(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Json(_req): Json<StartChargingRequest>,
 ) -> impl IntoResponse {
     // TODO: Start actual charging session
@@ -109,7 +109,7 @@ pub async fn start_charging(
 /// Stop charging session
 pub async fn stop_charging(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     // TODO: Stop actual charging session
     (
@@ -125,7 +125,7 @@ pub async fn stop_charging(
 /// Get charging session history
 pub async fn get_charging_sessions(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     // TODO: Fetch from database
     (

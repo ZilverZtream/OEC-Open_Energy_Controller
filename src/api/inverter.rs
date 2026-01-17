@@ -36,7 +36,7 @@ pub struct SetExportLimitRequest {
 /// Get inverter current state
 pub async fn get_inverter_state(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     // TODO: Get from actual inverter device when implemented
     let state = InverterState {
@@ -66,7 +66,7 @@ pub async fn get_inverter_state(
 /// Set inverter operating mode
 pub async fn set_inverter_mode(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Json(req): Json<SetModeRequest>,
 ) -> impl IntoResponse {
     // TODO: Actually set mode on real inverter
@@ -83,7 +83,7 @@ pub async fn set_inverter_mode(
 /// Set export power limit
 pub async fn set_export_limit(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Json(req): Json<SetExportLimitRequest>,
 ) -> impl IntoResponse {
     // Validate limit
@@ -111,7 +111,7 @@ pub async fn set_export_limit(
 /// Get inverter production history
 pub async fn get_production_history(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     // TODO: Fetch from database
     (
@@ -128,7 +128,7 @@ pub async fn get_production_history(
 /// Get inverter efficiency statistics
 pub async fn get_efficiency_stats(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     // TODO: Calculate from historical data
     (

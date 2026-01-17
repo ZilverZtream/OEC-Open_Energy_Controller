@@ -18,6 +18,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+use crate::controller::safety_monitor::SafetyMonitor;
 use crate::domain::{EvCharger, ChargerState, V2XCapabilities};
 use crate::optimizer::Constraints;
 
@@ -86,6 +87,8 @@ pub struct V2XController {
     charger: Arc<dyn EvCharger>,
     /// V2X capabilities cache
     capabilities: Option<V2XCapabilities>,
+    /// Safety monitor reference - CRITICAL for emergency stop integration
+    safety_monitor: Option<Arc<SafetyMonitor>>,
 }
 
 impl V2XController {
@@ -97,7 +100,15 @@ impl V2XController {
             config: Arc::new(RwLock::new(config)),
             charger,
             capabilities,
+            safety_monitor: None,
         }
+    }
+
+    /// Set safety monitor reference for emergency stop integration
+    /// CRITICAL: Should be called during initialization for proper safety integration
+    pub fn set_safety_monitor(&mut self, safety_monitor: Arc<SafetyMonitor>) {
+        self.safety_monitor = Some(safety_monitor);
+        info!("V2X controller safety monitor integration configured");
     }
 
     /// Check if V2X is available and enabled
@@ -228,6 +239,22 @@ impl V2XController {
         let state = self.charger.read_state().await?;
 
         if decision.should_discharge {
+            // CRITICAL SAFETY FIX: Validate power command before execution
+            let v2x_caps = self.capabilities.as_ref()
+                .context("V2X capabilities not available")?;
+
+            if decision.target_power_w > v2x_caps.max_discharge_power_w {
+                anyhow::bail!(
+                    "V2X power command {}W exceeds maximum discharge power {}W",
+                    decision.target_power_w,
+                    v2x_caps.max_discharge_power_w
+                );
+            }
+
+            if !decision.target_power_w.is_finite() {
+                anyhow::bail!("Invalid V2X power command: value is not finite");
+            }
+
             info!(
                 "V2X: Starting discharge - {} W (reason: {}, SoC: {:.1}%)",
                 decision.target_power_w, decision.reason, decision.vehicle_soc
@@ -266,6 +293,20 @@ impl V2XController {
         average_price: f64,
         current_time: DateTime<Utc>,
     ) -> Result<V2XDecision> {
+        // CRITICAL SAFETY FIX: Check for emergency stop before any V2X operations
+        if let Some(safety_monitor) = &self.safety_monitor {
+            let safety_state = safety_monitor.state().await;
+            if safety_state.emergency_stop_active {
+                warn!("V2X control step aborted - emergency stop active");
+                return Ok(V2XDecision {
+                    should_discharge: false,
+                    target_power_w: 0.0,
+                    reason: "emergency_stop_active".to_string(),
+                    vehicle_soc: 0.0,
+                });
+            }
+        }
+
         let decision = self.evaluate_discharge_decision(
             current_price,
             average_price,

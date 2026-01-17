@@ -34,6 +34,11 @@ pub trait Inverter: Send + Sync {
     async fn set_mode(&self, mode: InverterMode) -> Result<()>;
     async fn set_export_limit(&self, watts: f64) -> Result<()>;
     fn capabilities(&self) -> InverterCapabilities;
+
+    /// Emergency shutdown - immediately stop all inverter operations
+    /// This method bypasses all locks and queues for direct hardware control
+    /// Called by SafetyMonitor when critical violations detected
+    async fn emergency_shutdown(&self) -> Result<()>;
 }
 
 #[cfg_attr(feature = "swagger", derive(utoipa::ToSchema))]
@@ -210,6 +215,15 @@ impl Inverter for SimulatedInverter {
 
     fn capabilities(&self) -> InverterCapabilities {
         self.caps.clone()
+    }
+
+    async fn emergency_shutdown(&self) -> Result<()> {
+        // Immediately stop all inverter operations
+        let mut state = self.state.write().await;
+        state.status = InverterStatus::Shutdown;
+        state.ac_output_power_w = 0.0;
+        state.mode = InverterMode::Standby;
+        Ok(())
     }
 }
 

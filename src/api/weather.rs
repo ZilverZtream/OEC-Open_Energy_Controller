@@ -20,7 +20,7 @@ pub struct WeatherQuery {
 
 pub async fn get_weather_forecast(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Query(q): Query<WeatherQuery>,
 ) -> impl IntoResponse {
     let (latitude, longitude) = match (q.latitude, q.longitude) {

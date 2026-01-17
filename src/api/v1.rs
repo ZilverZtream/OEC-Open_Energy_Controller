@@ -87,7 +87,7 @@ pub struct SystemStatus {
 
 pub async fn get_status(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     match st.controller.get_current_state().await {
         Ok(battery_state) => {
@@ -133,7 +133,7 @@ pub struct ForecastQuery {
 
 pub async fn get_forecast(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Query(q): Query<ForecastQuery>,
 ) -> impl IntoResponse {
     let _ = q.horizon_hours;
@@ -146,7 +146,7 @@ pub async fn get_forecast(
 
 pub async fn get_schedule(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     let s: Option<Schedule> = st.controller.get_schedule().await;
     (StatusCode::OK, Json(s)).into_response()
@@ -154,7 +154,7 @@ pub async fn get_schedule(
 
 pub async fn set_schedule(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Json(schedule): Json<Schedule>,
 ) -> impl IntoResponse {
     match st.controller.set_schedule(schedule).await {
@@ -172,7 +172,7 @@ pub struct OptimizeRequest {
 
 pub async fn trigger_optimization(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Json(req): Json<OptimizeRequest>,
 ) -> impl IntoResponse {
     let _ = req;
@@ -185,7 +185,7 @@ pub async fn trigger_optimization(
 
 pub async fn list_devices(
     State(_st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
 ) -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({ "devices": [] }))).into_response()
 }
@@ -197,13 +197,13 @@ pub struct SimulationStepRequest {
 
 pub async fn simulation_step(
     State(st): State<AppState>,
-    AuthBearer(_): AuthBearer,
+    AuthBearer: AuthBearer,
     Json(_req): Json<SimulationStepRequest>,
 ) -> impl IntoResponse {
     if let Err(e) = st.controller.reoptimize_schedule().await {
         return (StatusCode::BAD_REQUEST, Json(err(e))).into_response();
     }
-    get_status(State(st), AuthBearer(uuid::Uuid::nil()))
+    get_status(State(st), AuthBearer)
         .await
         .into_response()
 }
