@@ -26,11 +26,13 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ============================================================================
 FROM chef AS builder
 
-# Install system dependencies
+# Install system dependencies including CBC solver for MILP optimization
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     libpq-dev \
+    coinor-cbc \
+    coinor-libcbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy recipe and build dependencies
@@ -57,12 +59,14 @@ RUN strip target/release/open-energy-controller
 # ============================================================================
 FROM debian:bookworm-slim AS runtime
 
-# Install runtime dependencies
+# Install runtime dependencies including CBC solver for MILP optimization
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     libpq5 \
     curl \
+    coinor-cbc \
+    coinor-libcbc3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

@@ -200,6 +200,17 @@ pub mod register_map {
         fn max_charge_power_register(&self) -> u16;
         fn max_discharge_power_register(&self) -> u16;
         fn capacity_register(&self) -> u16;
+
+        /// Control mode register (optional, returns None if not supported)
+        /// Used to enable remote control mode on hybrid inverters
+        fn control_mode_register(&self) -> Option<u16> {
+            None
+        }
+
+        /// Value to write to control mode register to enable remote control
+        fn remote_control_value(&self) -> u16 {
+            1 // Default: 1 = Remote Control
+        }
     }
 
     /// Generic battery register map (common Modbus addresses)
@@ -254,6 +265,14 @@ pub mod register_map {
         fn max_charge_power_register(&self) -> u16 { 37764 }
         fn max_discharge_power_register(&self) -> u16 { 37764 }
         fn capacity_register(&self) -> u16 { 37758 }
+
+        fn control_mode_register(&self) -> Option<u16> {
+            Some(47000) // Huawei control mode register
+        }
+
+        fn remote_control_value(&self) -> u16 {
+            2 // Huawei: 2 = Remote EMS Control
+        }
     }
 
     /// SolarEdge StorEdge register map
@@ -281,6 +300,14 @@ pub mod register_map {
         fn max_charge_power_register(&self) -> u16 { 62857 }
         fn max_discharge_power_register(&self) -> u16 { 62858 }
         fn capacity_register(&self) -> u16 { 62859 }
+
+        fn control_mode_register(&self) -> Option<u16> {
+            Some(0xE004) // SolarEdge control mode register
+        }
+
+        fn remote_control_value(&self) -> u16 {
+            3 // SolarEdge: 3 = Remote Control via Modbus
+        }
     }
 }
 

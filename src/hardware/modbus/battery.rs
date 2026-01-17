@@ -38,11 +38,16 @@ impl ModbusBattery {
         // Read capabilities from device
         let capabilities = Self::read_capabilities(&client, &*register_map).await?;
 
-        Ok(Self {
+        let battery = Self {
             client,
             register_map,
             capabilities,
-        })
+        };
+
+        // Enable remote control mode if supported by the device
+        battery.enable_remote_control().await?;
+
+        Ok(battery)
     }
 
     /// Create a new ModbusBattery with Huawei Luna2000 register map
@@ -54,11 +59,16 @@ impl ModbusBattery {
         let register_map = Box::new(HuaweiLuna2000RegisterMap);
         let capabilities = Self::read_capabilities(&client, &*register_map).await?;
 
-        Ok(Self {
+        let battery = Self {
             client,
             register_map,
             capabilities,
-        })
+        };
+
+        // Enable remote control mode (required for Huawei inverters)
+        battery.enable_remote_control().await?;
+
+        Ok(battery)
     }
 
     /// Create a new ModbusBattery with SolarEdge register map
@@ -70,11 +80,16 @@ impl ModbusBattery {
         let register_map = Box::new(SolarEdgeRegisterMap);
         let capabilities = Self::read_capabilities(&client, &*register_map).await?;
 
-        Ok(Self {
+        let battery = Self {
             client,
             register_map,
             capabilities,
-        })
+        };
+
+        // Enable remote control mode (required for SolarEdge inverters)
+        battery.enable_remote_control().await?;
+
+        Ok(battery)
     }
 
     /// Read battery capabilities from device
@@ -82,45 +97,27 @@ impl ModbusBattery {
         client: &ModbusClient,
         register_map: &dyn RegisterMap,
     ) -> Result<BatteryCapabilities> {
-        // Read max charge power
-        // SAFETY FIX: Log warnings when Modbus reads fail instead of silently using defaults
+        // CRITICAL FIX: Fail early if capabilities cannot be read
+        // Using wrong defaults (e.g., 10kWh for a 30kWh battery) causes incorrect
+        // SoC calculations, which can lead to deep-discharge or overcharge damage.
+
+        // Read max charge power with retry
         let max_charge_regs = client
             .read_holding_registers(register_map.max_charge_power_register(), 1)
             .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(
-                    error = %e,
-                    register = register_map.max_charge_power_register(),
-                    "Failed to read max_charge_power from Modbus, using default 5kW"
-                );
-                vec![5000]
-            });
+            .context("Failed to read max_charge_power - battery not responding correctly")?;
 
-        // Read max discharge power
+        // Read max discharge power with retry
         let max_discharge_regs = client
             .read_holding_registers(register_map.max_discharge_power_register(), 1)
             .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(
-                    error = %e,
-                    register = register_map.max_discharge_power_register(),
-                    "Failed to read max_discharge_power from Modbus, using default 5kW"
-                );
-                vec![5000]
-            });
+            .context("Failed to read max_discharge_power - battery not responding correctly")?;
 
-        // Read capacity
+        // Read capacity with retry (MOST CRITICAL - wrong capacity = wrong SoC)
         let capacity_regs = client
             .read_holding_registers(register_map.capacity_register(), 1)
             .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(
-                    error = %e,
-                    register = register_map.capacity_register(),
-                    "Failed to read capacity from Modbus, using default 10kWh - CRITICAL: Verify battery specs!"
-                );
-                vec![10000]
-            });
+            .context("Failed to read battery capacity - cannot proceed without accurate specs")?;
 
         let max_charge_kw = parser::parse_u16(&max_charge_regs) as f64 / 1000.0;
         let max_discharge_kw = parser::parse_u16(&max_discharge_regs) as f64 / 1000.0;
@@ -144,7 +141,28 @@ impl ModbusBattery {
     /// Write power command to battery (watts, positive=charge, negative=discharge)
     async fn write_power_command(&self, watts: f64) -> Result<()> {
         let scale = self.register_map.power_command_scale();
-        let register_value = (watts / scale) as i16;
+        let scaled_value = watts / scale;
+
+        // CRITICAL FIX: Prevent integer overflow that would reverse control polarity
+        // i16 range is -32,768 to 32,767. If scaled_value exceeds this, it wraps around.
+        // Example: 5000W / 0.1 = 50,000 -> wraps to -15,536 (DISCHARGE instead of CHARGE!)
+        const I16_MAX: f64 = 32767.0;
+        const I16_MIN: f64 = -32768.0;
+
+        if scaled_value > I16_MAX || scaled_value < I16_MIN {
+            return Err(anyhow::anyhow!(
+                "Power command {} W (scaled: {}) exceeds i16 range [{}, {}]. \
+                 This would cause integer overflow and reverse polarity. \
+                 Check your register map scale factor ({}) or reduce power.",
+                watts,
+                scaled_value,
+                I16_MIN,
+                I16_MAX,
+                scale
+            ));
+        }
+
+        let register_value = scaled_value as i16;
 
         // Convert i16 to u16 for Modbus
         let value = register_value as u16;
@@ -171,6 +189,32 @@ impl ModbusBattery {
     /// from control loops for connection recovery.
     pub async fn reconnect(&self) -> Result<()> {
         self.client.reconnect().await
+    }
+
+    /// Enable remote control mode on the inverter
+    ///
+    /// CRITICAL: Hybrid inverters default to "Maximize Self-Consumption" mode.
+    /// This method writes to the control mode register to enable external power
+    /// commands via Modbus. Without this, power commands will be ignored.
+    async fn enable_remote_control(&self) -> Result<()> {
+        if let Some(register) = self.register_map.control_mode_register() {
+            let value = self.register_map.remote_control_value();
+            debug!("Enabling remote control mode: writing {} to register {}", value, register);
+
+            self.client
+                .write_single_register(register, value)
+                .await
+                .context("Failed to enable remote control mode")?;
+
+            tracing::info!(
+                "Remote control mode enabled (register: {}, value: {})",
+                register,
+                value
+            );
+        } else {
+            debug!("Device does not support control mode register, skipping");
+        }
+        Ok(())
     }
 }
 

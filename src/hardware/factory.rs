@@ -23,15 +23,20 @@ pub enum HardwareMode {
 /// Factory for creating hardware device instances
 pub struct DeviceFactory {
     mode: HardwareMode,
+    config: Option<crate::config::Config>,
 }
 
 impl DeviceFactory {
     pub fn new(mode: HardwareMode) -> Self {
-        Self { mode }
+        Self { mode, config: None }
+    }
+
+    pub fn with_config(mode: HardwareMode, config: crate::config::Config) -> Self {
+        Self { mode, config: Some(config) }
     }
 
     /// Create a battery instance based on hardware mode
-    pub fn create_battery(
+    pub async fn create_battery(
         &self,
         caps: BatteryCapabilities,
         initial_soc: f64,
@@ -50,8 +55,35 @@ impl DeviceFactory {
                 Arc::new(SimulatedBattery::new_with_ambient(initial, caps, ambient_temp_c))
             }
             HardwareMode::Modbus => {
-                // TODO: Implement Modbus battery
-                tracing::warn!("Modbus battery not yet implemented, falling back to simulated");
+                #[cfg(feature = "modbus")]
+                {
+                    if let Some(ref config) = self.config {
+                        if let Some(ref modbus_config) = config.hardware.modbus {
+                            // For now, use localhost with configured port
+                            // TODO: Add device discovery or explicit host configuration
+                            let addr = format!("127.0.0.1:{}", modbus_config.default_port);
+                            match crate::hardware::modbus::ModbusBattery::new(
+                                &addr,
+                                modbus_config.default_unit_id,
+                            )
+                            .await
+                            {
+                                Ok(battery) => {
+                                    tracing::info!("Successfully connected to Modbus battery at {}", addr);
+                                    return Arc::new(battery);
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        error = %e,
+                                        "Failed to connect to Modbus battery, falling back to simulated"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                tracing::warn!("Modbus battery not configured or feature disabled, falling back to simulated");
                 let initial = BatteryState {
                     soc_percent: initial_soc,
                     power_w: 0.0,
