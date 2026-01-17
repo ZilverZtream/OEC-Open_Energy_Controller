@@ -3,7 +3,7 @@ host = "127.0.0.1"
 port = 8080
 
 [auth]
-token = "dev_test_token_123"
+token = "dev_test_token_123456789012345678901234567890"
 
 [controller]
 tick_seconds = 60

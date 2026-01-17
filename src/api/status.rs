@@ -209,9 +209,9 @@ fn get_power_status(_state: &AppState) -> PowerStatusInfo {
     // For now, return placeholder data with correct structure
 
     // Example calculation of phase imbalance:
-    let l1 = 10.0; // TODO: read from state
-    let l2 = 12.0; // TODO: read from state
-    let l3 = 11.0; // TODO: read from state
+    let l1 = 10.0_f64; // TODO: read from state
+    let l2 = 12.0_f64; // TODO: read from state
+    let l3 = 11.0_f64; // TODO: read from state
 
     let max_amps = l1.max(l2).max(l3);
     let avg_amps = (l1 + l2 + l3) / 3.0;

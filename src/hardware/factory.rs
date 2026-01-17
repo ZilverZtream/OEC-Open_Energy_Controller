@@ -8,11 +8,16 @@ use crate::domain::{
 };
 
 /// Hardware mode configuration
+///
+/// CRITICAL SAFETY FIX: Modbus mode is only available when the 'modbus' feature is enabled
+/// This prevents accidental hardware actuation during simulation/development builds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HardwareMode {
     /// Simulated devices for development and testing
     Simulated,
     /// Real hardware via Modbus TCP
+    /// SAFETY: Only available with 'modbus' feature flag to prevent accidental hardware actuation
+    #[cfg(feature = "modbus")]
     #[allow(dead_code)]
     Modbus,
     /// Mock devices with pre-programmed responses
@@ -54,36 +59,34 @@ impl DeviceFactory {
                 };
                 Arc::new(SimulatedBattery::new_with_ambient(initial, caps, ambient_temp_c))
             }
+            #[cfg(feature = "modbus")]
             HardwareMode::Modbus => {
-                #[cfg(feature = "modbus")]
-                {
-                    if let Some(ref config) = self.config {
-                        if let Some(ref modbus_config) = config.hardware.modbus {
-                            // For now, use localhost with configured port
-                            // TODO: Add device discovery or explicit host configuration
-                            let addr = format!("127.0.0.1:{}", modbus_config.default_port);
-                            match crate::hardware::modbus::ModbusBattery::new(
-                                &addr,
-                                modbus_config.default_unit_id,
-                            )
-                            .await
-                            {
-                                Ok(battery) => {
-                                    tracing::info!("Successfully connected to Modbus battery at {}", addr);
-                                    return Arc::new(battery);
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        error = %e,
-                                        "Failed to connect to Modbus battery, falling back to simulated"
-                                    );
-                                }
+                if let Some(ref config) = self.config {
+                    if let Some(ref modbus_config) = config.hardware.modbus {
+                        // For now, use localhost with configured port
+                        // TODO: Add device discovery or explicit host configuration
+                        let addr = format!("127.0.0.1:{}", modbus_config.default_port);
+                        match crate::hardware::modbus::ModbusBattery::new(
+                            &addr,
+                            modbus_config.default_unit_id,
+                        )
+                        .await
+                        {
+                            Ok(battery) => {
+                                tracing::info!("Successfully connected to Modbus battery at {}", addr);
+                                return Arc::new(battery);
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    error = %e,
+                                    "Failed to connect to Modbus battery, falling back to simulated"
+                                );
                             }
                         }
                     }
                 }
 
-                tracing::warn!("Modbus battery not configured or feature disabled, falling back to simulated");
+                tracing::warn!("Modbus battery not configured, falling back to simulated");
                 let initial = BatteryState {
                     soc_percent: initial_soc,
                     power_w: 0.0,
@@ -114,6 +117,7 @@ impl DeviceFactory {
     pub fn create_ev_charger(&self) -> Arc<dyn EvCharger> {
         match self.mode {
             HardwareMode::Simulated => Arc::new(SimulatedEvCharger::default_charger()),
+            #[cfg(feature = "modbus")]
             HardwareMode::Modbus => {
                 // TODO: Implement OCPP EV charger
                 tracing::warn!("OCPP charger not yet implemented, falling back to simulated");
@@ -146,6 +150,7 @@ impl DeviceFactory {
                 };
                 Arc::new(SimulatedInverter::new(initial, caps))
             }
+            #[cfg(feature = "modbus")]
             HardwareMode::Modbus => {
                 // TODO: Implement Modbus inverter
                 tracing::warn!("Modbus inverter not yet implemented, falling back to simulated");

@@ -251,6 +251,9 @@ impl Default for SensorFallbackConfig {
 #[serde(rename_all = "lowercase")]
 pub enum HardwareMode {
     Simulated,
+    /// CRITICAL SAFETY FIX: Modbus mode only available with 'modbus' feature
+    /// This prevents accidental hardware actuation in simulation builds
+    #[cfg(feature = "modbus")]
     Modbus,
     Mock,
 }
